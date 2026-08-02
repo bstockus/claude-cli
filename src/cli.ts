@@ -25,11 +25,13 @@ import { renameFileAction } from "./commands/rename-file.js";
 import { graphAction } from "./commands/graph.js";
 import { validateFrontmatterAction } from "./commands/validate-frontmatter.js";
 import { auditAction } from "./commands/audit.js";
+import { queryAction } from "./commands/query.js";
+import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
 import { loadConfig, selectConfig, defaultLintConcurrency } from "./config.js";
 import type { ResolvedConfig } from "./config.js";
-import { commandOptions, initializeRuntime } from "./runtime.js";
+import { commandOptions, initializeRuntime, runtime } from "./runtime.js";
 import { CommandExit } from "./command-result.js";
 
 // Read the version at runtime rather than inlining it: semantic-release rewrites
@@ -618,6 +620,67 @@ common(md.command("orphans"))
     ),
   );
 
+common(md.command("query"))
+  .description("Run a focused query across the Markdown workspace")
+  .argument(
+    "<kind>",
+    "Query kind: links-to, duplicates, unused-assets, code-blocks, tasks, missing-h1",
+  )
+  .argument("[directory]", "Directory to query (default: workspace root)")
+  .option("--target <path>", "Target path and optional heading fragment for links-to")
+  .option("--field <field>", "Duplicate field: title, slug, heading-slug, frontmatter:<key>")
+  .option("--lang <language>", "Code-block language filter")
+  .option("--content", "Include code-block content")
+  .option("--no-content", "Exclude code-block content")
+  .option("--status <status>", "Task status: all, done, pending")
+  .option("--summary", "Show task totals without individual tasks")
+  .option("--no-summary", "Include individual tasks")
+  .option("--asset-extension <ext>", "Asset extension override (repeatable)", collect)
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
+  .addHelpText("after", "\nQuery matches are informational and exit 0.")
+  .action((kind: string, directory: string | undefined, opts: Record<string, unknown>) =>
+    queryAction(
+      kind,
+      directory ?? projectConfig.root,
+      commandOptions(
+        "query",
+        {
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+          field: "title",
+          content: false,
+          status: "all",
+          summary: false,
+          assetExtension: projectConfig.assets.extensions,
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("index"))
+  .description("Inspect or manage the persistent workspace index")
+  .argument("<action>", "Index action: status, build, clear")
+  .argument("[directory]", "Directory to inspect or build (default: workspace root)")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nActions:\n  status  Inspect cache coverage\n  build   Force a rebuild\n  clear   Clear this workspace cache",
+  )
+  .action((action: string, directory: string | undefined, opts: Record<string, unknown>) =>
+    indexAction(
+      action,
+      directory ?? projectConfig.root,
+      commandOptions(
+        "index",
+        { include: projectConfig.files.include, exclude: projectConfig.files.exclude },
+        opts,
+      ) as never,
+    ),
+  );
+
 common(md.command("rename-heading"))
   .description("Rename a heading and update all internal anchor references")
   .argument("<file>", "Path to the markdown file containing the heading")
@@ -683,3 +746,4 @@ try {
     process.exitCode = 1;
   }
 }
+runtime().workspace.flush();

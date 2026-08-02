@@ -10,6 +10,12 @@ import {
   type Root,
 } from "./markdown-ast.js";
 import type { ResolvedConfig } from "./config.js";
+import {
+  fingerprint,
+  WorkspaceIndex,
+  type FileFingerprint,
+  type WorkspaceIndexStatus,
+} from "./workspace-index.js";
 import { parse as parseYaml } from "yaml";
 
 export type FrontmatterResult =
@@ -52,10 +58,18 @@ function inside(root: string, target: string): boolean {
 
 export class Workspace {
   readonly root: string;
-  private readonly cache = new Map<string, MarkdownDocument>();
+  private readonly cache = new Map<
+    string,
+    { fingerprint?: FileFingerprint; document: MarkdownDocument; transient?: boolean }
+  >();
+  private readonly index: WorkspaceIndex;
 
-  constructor(readonly config: ResolvedConfig) {
+  constructor(
+    readonly config: ResolvedConfig,
+    options: { cachePath?: string } = {},
+  ) {
     this.root = config.root;
+    this.index = new WorkspaceIndex(config.root, config.markdown.renderer, options.cachePath);
   }
 
   displayPath(filePath: string, style = this.config.output.paths): string {
@@ -65,9 +79,22 @@ export class Workspace {
   document(filePath: string): MarkdownDocument {
     const absolute = path.resolve(filePath);
     const cached = this.cache.get(absolute);
-    if (cached) return cached;
+    if (cached?.transient) return cached.document;
     if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
       throw new Error(`File not found: ${absolute}`);
+    }
+    const current = fingerprint(absolute);
+    if (
+      cached &&
+      cached.fingerprint?.size === current.size &&
+      cached.fingerprint.mtimeMs === current.mtimeMs
+    ) {
+      return cached.document;
+    }
+    const indexed = this.index.get(absolute, current);
+    if (indexed) {
+      this.cache.set(absolute, { fingerprint: current, document: indexed });
+      return indexed;
     }
     const content = fs.readFileSync(absolute, "utf-8");
     const tree = parseMarkdown(content);
@@ -80,25 +107,31 @@ export class Workspace {
       references: extractLinks(tree, content),
       frontmatter: parseFrontmatter(content),
     };
-    this.cache.set(absolute, document);
+    this.cache.set(absolute, { fingerprint: current, document });
+    this.index.set(absolute, current, document);
     return document;
   }
 
   invalidate(filePath: string): void {
-    this.cache.delete(path.resolve(filePath));
+    const absolute = path.resolve(filePath);
+    this.cache.delete(absolute);
+    this.index.invalidate(absolute);
   }
 
   registerDocument(filePath: string, content: string): string {
     const absolute = path.resolve(filePath);
     const tree = parseMarkdown(content);
     this.cache.set(absolute, {
-      path: absolute,
-      content,
-      lines: content.split("\n"),
-      tree,
-      headings: extractHeadings(tree),
-      references: extractLinks(tree, content),
-      frontmatter: parseFrontmatter(content),
+      transient: true,
+      document: {
+        path: absolute,
+        content,
+        lines: content.split("\n"),
+        tree,
+        headings: extractHeadings(tree),
+        references: extractLinks(tree, content),
+        frontmatter: parseFrontmatter(content),
+      },
     });
     return absolute;
   }
@@ -143,5 +176,63 @@ export class Workspace {
     };
     walk(absolute);
     return results.sort();
+  }
+
+  assetFiles(
+    directory: string = this.root,
+    extensions: string[] = this.config.assets.extensions,
+    exclude: string[] = this.config.files.exclude,
+  ): string[] {
+    const absolute = path.resolve(directory);
+    if (this.config.configPath && !inside(this.root, absolute)) {
+      throw new Error(`Directory is outside configured workspace root: ${absolute}`);
+    }
+    const normalized = new Set(
+      extensions.map((extension) =>
+        (extension.startsWith(".") ? extension : `.${extension}`).toLowerCase(),
+      ),
+    );
+    const results: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isSymbolicLink()) continue;
+        if (entry.isDirectory()) {
+          if (!SKIPPED_DIRS.has(entry.name)) walk(fullPath);
+          continue;
+        }
+        if (!entry.isFile() || !normalized.has(path.extname(entry.name).toLowerCase())) continue;
+        const relative = path.relative(this.root, fullPath).split(path.sep).join("/");
+        if (exclude.some((pattern) => minimatch(relative, pattern, { dot: true, nonegate: true })))
+          continue;
+        results.push(fullPath);
+      }
+    };
+    walk(absolute);
+    return results.sort();
+  }
+
+  indexStatus(files: string[]): WorkspaceIndexStatus {
+    return this.index.status(files);
+  }
+
+  rebuildIndex(directory: string, files: string[]): WorkspaceIndexStatus {
+    const records = new Map<string, { fingerprint: FileFingerprint; document: MarkdownDocument }>();
+    for (const file of files) {
+      this.invalidate(file);
+      const document = this.document(file);
+      records.set(file, { fingerprint: fingerprint(file), document });
+    }
+    this.index.replace(directory, records);
+    this.index.flush(true);
+    return this.index.status(files);
+  }
+
+  clearIndex(): void {
+    this.index.clear(true);
+  }
+
+  flush(): void {
+    this.index.flush();
   }
 }

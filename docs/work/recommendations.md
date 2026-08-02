@@ -202,6 +202,9 @@ The cache should be an optimization and must never cause an otherwise valid comm
 
 ### 8. Richer workspace queries
 
+Status: implemented by the persistent workspace index, `md query`, and `md index` cache
+management actions.
+
 Once a workspace index exists, expose focused queries without reparsing the whole tree for
 each one. Possible commands or graph options include:
 

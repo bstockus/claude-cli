@@ -36,6 +36,20 @@ async function runCliIn(
   }
 }
 
+async function runCliInWithWorkspaceCache(
+  cwd: string,
+  ...args: string[]
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const env = { ...process.env, XDG_CACHE_HOME: path.join(cwd, ".test-cache") };
+  try {
+    const { stdout, stderr } = await exec("node", [cliPath, ...args], { cwd, env });
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err: unknown) {
+    const e = err as { stdout: string; stderr: string; code: number };
+    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.code };
+  }
+}
+
 describe("CLI e2e", () => {
   it("shows help with no arguments", async () => {
     const { stdout, exitCode } = await runCli("help");
@@ -1170,5 +1184,127 @@ describe("CLI e2e", () => {
     const sarif = await runCli("md", "lint", file, "--format", "sarif");
     expect(sarif.exitCode).toBe(2);
     expect(JSON.parse(sarif.stderr).version).toBe("2.1.0");
+  });
+});
+
+describe("workspace queries and index", () => {
+  it("queries richer workspace data and manages the persistent index", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-query-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        'version: 1\noutput:\n  paths: relative\nassets:\n  extensions: [".png", ".svg"]\n',
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, "a.md"),
+        "---\ntitle: Shared\nslug: same\nid: one\n---\n# Alpha\n\n[Part](guide.md#part)\n![Used](used.png)\n\n- [ ] Todo\n\n```js\nconst a = 1;\n```\n",
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, "b.md"),
+        "---\ntitle: Shared\nslug: same\nid: one\n---\n# Beta\n\n## Alpha\n\n- [x] Done\n\n```python\npass\n```\n",
+      );
+      fs.writeFileSync(path.join(tmpDir, "guide.md"), "# Guide\n\n## Part\n");
+      fs.writeFileSync(path.join(tmpDir, "missing.md"), "No top-level heading.\n");
+      fs.writeFileSync(path.join(tmpDir, "used.png"), "used");
+      fs.writeFileSync(path.join(tmpDir, "unused.svg"), "unused");
+
+      const duplicates = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "duplicates",
+        "--field",
+        "title",
+        "--format=json",
+      );
+      expect(duplicates.exitCode).toBe(0);
+      expect(JSON.parse(duplicates.stdout).results[0]).toMatchObject({ value: "Shared" });
+
+      const links = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "links-to",
+        "--target",
+        "guide.md#part",
+        "--format=json",
+      );
+      expect(JSON.parse(links.stdout).results).toHaveLength(1);
+
+      const unused = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "unused-assets",
+        "--format=json",
+      );
+      expect(JSON.parse(unused.stdout).results).toEqual([
+        { file: "unused.svg", extension: ".svg" },
+      ]);
+
+      const blocks = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "code-blocks",
+        "--lang",
+        "js",
+        "--format=json",
+      );
+      expect(JSON.parse(blocks.stdout).results).toMatchObject([{ language: "js", count: 1 }]);
+
+      const tasks = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "tasks",
+        "--summary",
+        "--format=json",
+      );
+      expect(JSON.parse(tasks.stdout).summary).toEqual({
+        total: 2,
+        done: 1,
+        pending: 1,
+        matched: 2,
+      });
+
+      const missing = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "query",
+        "missing-h1",
+        "--format=json",
+      );
+      expect(JSON.parse(missing.stdout).results).toEqual([{ file: "missing.md" }]);
+
+      const built = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "index",
+        "build",
+        "--format=json",
+      );
+      expect(built.stderr).toBe("");
+      expect(built.exitCode).toBe(0);
+      expect(JSON.parse(built.stdout)).toMatchObject({ action: "build", current: 4, stale: 0 });
+      const status = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "index",
+        "status",
+        "--format=json",
+      );
+      expect(JSON.parse(status.stdout)).toMatchObject({ action: "status", current: 4, missing: 0 });
+      const cleared = await runCliInWithWorkspaceCache(
+        tmpDir,
+        "md",
+        "index",
+        "clear",
+        "--format=json",
+      );
+      expect(JSON.parse(cleared.stdout)).toMatchObject({ action: "clear", cleared: true });
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

@@ -148,6 +148,9 @@ files:
   exclude: ["archive/**", "generated/**"]
   entryPoints: ["docs/README.md"]
 
+assets:
+  extensions: [".png", ".jpg", ".svg", ".pdf"]
+
 markdown:
   renderer: github
 
@@ -403,6 +406,43 @@ claude-cli md graph docs --output dot
 `report` (the default) follows `--format`; Mermaid and DOT are deterministic raw stdout
 payloads. Broken targets and unreachable documents exit `2`; informational graph metrics
 do not.
+
+#### `md query <kind> [directory]`
+
+Run focused, informational queries across the selected workspace. Query matches exit `0`;
+invalid kinds or options exit `1`.
+
+```bash
+claude-cli md query links-to --target docs/guide.md#getting-started
+claude-cli md query duplicates --field title
+claude-cli md query duplicates --field frontmatter:id --format json
+claude-cli md query unused-assets --asset-extension .png --asset-extension .svg
+claude-cli md query code-blocks --lang typescript --content
+claude-cli md query tasks --status pending
+claude-cli md query missing-h1
+```
+
+Available kinds are `links-to`, `duplicates`, `unused-assets`, `code-blocks`, `tasks`, and
+`missing-h1`. Duplicate fields are `title`, `slug`, `heading-slug`, and
+`frontmatter:<key>`. A title comes from string frontmatter `title`, falling back to the first
+level-one heading. Asset scanning uses `assets.extensions` or repeatable
+`--asset-extension` overrides.
+
+#### `md index <action> [directory]`
+
+Inspect and manage the persistent parsed-workspace cache.
+
+```bash
+claude-cli md index status
+claude-cli md index build docs
+claude-cli md index clear
+```
+
+`status` reports current, stale, and missing entries. `build` forces reparsing of the selected
+Markdown files, while `clear` removes only the current workspace index. The index lives at
+`${XDG_CACHE_HOME:-~/.cache}/claude-cli/workspaces/<workspace-hash>.json`. Normal commands
+validate file size and modification time before reuse; missing, corrupt, incompatible, or
+unwritable cache data is treated as a cache miss and never makes analysis fail.
 
 ### Document Analysis
 

@@ -31,6 +31,7 @@ export interface ResolvedConfig {
   configPath?: string;
   root: string;
   files: { include: string[]; exclude: string[]; entryPoints: string[] };
+  assets: { extensions: string[] };
   markdown: { renderer: "github" };
   output: { format: OutputFormat; paths: PathStyle };
   checks: CheckConfig;
@@ -150,6 +151,20 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
   orphans: new Set(["format", "paths", "include", "exclude", "ignore", "entry"]),
   "rename-heading": new Set(["format", "paths", "directory", "dryRun", "include", "exclude"]),
   "rename-file": new Set(["format", "paths", "dryRun", "include", "exclude"]),
+  query: new Set([
+    "format",
+    "paths",
+    "include",
+    "exclude",
+    "target",
+    "field",
+    "lang",
+    "content",
+    "status",
+    "summary",
+    "assetExtension",
+  ]),
+  index: new Set(["format", "paths", "include", "exclude"]),
 };
 
 const ROOT_KEYS = new Set([
@@ -164,6 +179,7 @@ const ROOT_KEYS = new Set([
   "commands",
   "frontmatter",
   "toc",
+  "assets",
 ]);
 
 const AUTOMATION_FORMAT_COMMANDS = new Set([
@@ -284,19 +300,29 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
       throw new Error(`${name} must be a non-negative integer`);
     }
   }
-  if (key === "status" && value !== "done" && value !== "pending") {
-    throw new Error(`${name} must be done or pending`);
+  if (key === "status" && !["all", "done", "pending"].includes(String(value))) {
+    throw new Error(`${name} must be all, done, or pending`);
   }
   if (key === "type" && !["internal", "external", "image", "anchor"].includes(String(value))) {
     throw new Error(`${name} must be internal, external, image, or anchor`);
   }
   if (
-    ["lang", "key", "directory", "schema", "output", "stdinName", "changedSince"].includes(key) &&
+    [
+      "lang",
+      "key",
+      "directory",
+      "schema",
+      "output",
+      "stdinName",
+      "changedSince",
+      "target",
+      "field",
+    ].includes(key) &&
     typeof value !== "string"
   ) {
     throw new Error(`${name} must be a string`);
   }
-  if (["include", "exclude", "ignore", "ignoreDomain", "entry"].includes(key))
+  if (["include", "exclude", "ignore", "ignoreDomain", "entry", "assetExtension"].includes(key))
     strings(value, name, []);
   if (["allowedStatus", "headFallbackStatus"].includes(key)) {
     if (
@@ -380,6 +406,8 @@ export function loadConfig(
   if (markdown.renderer !== undefined && markdown.renderer !== "github") {
     throw new Error("markdown.renderer must be github");
   }
+  const assets = object(rootObject.assets, "assets");
+  knownKeys(assets, new Set(["extensions"]), "assets");
   const output = object(rootObject.output, "output");
   knownKeys(output, new Set(["format", "paths"]), "output");
   const format = (output.format ?? "llm") as OutputFormat;
@@ -547,6 +575,26 @@ export function loadConfig(
       include: strings(files.include, "files.include", ["**/*.md"]),
       exclude: strings(files.exclude, "files.exclude", []),
       entryPoints,
+    },
+    assets: {
+      extensions: strings(assets.extensions, "assets.extensions", [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".avif",
+        ".ico",
+        ".bmp",
+        ".pdf",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".mp4",
+        ".webm",
+        ".mov",
+      ]),
     },
     markdown: { renderer: "github" },
     output: { format, paths },
