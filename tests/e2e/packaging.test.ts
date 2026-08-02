@@ -1,37 +1,60 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const exec = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..", "..");
 
-interface PackResult {
-  files: Array<{ path: string }>;
-  bin?: Record<string, string>;
-}
+let tmpDir: string;
+let packedFiles: string[];
 
-async function packFileList(): Promise<string[]> {
-  const { stdout } = await exec("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
+// Pack a real tarball and read its table of contents. Parsing `npm pack --json`
+// stdout is not safe: npm and lifecycle scripts (husky) may print ahead of the JSON.
+beforeAll(async () => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-cli-pack-"));
+  await exec("npm", ["pack", "--ignore-scripts", "--pack-destination", tmpDir], {
     cwd: repoRoot,
+  });
+
+  const tarball = fs.readdirSync(tmpDir).find((f) => f.endsWith(".tgz"));
+  if (!tarball) throw new Error(`npm pack produced no .tgz in ${tmpDir}`);
+
+  const { stdout } = await exec("tar", ["-tzf", path.join(tmpDir, tarball)], {
     maxBuffer: 32 * 1024 * 1024,
   });
-  const [result] = JSON.parse(stdout) as PackResult[];
-  return result.files.map((f) => f.path);
-}
+  // Entries are prefixed with the conventional "package/" root directory.
+  packedFiles = stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.trim().replace(/^package\//, ""));
+}, 120_000);
+
+afterAll(() => {
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+});
 
 describe("published package contents", () => {
-  it("ships the CLI entry point declared in bin", async () => {
-    expect(await packFileList()).toContain("dist/cli.js");
+  it("ships the CLI entry point declared in bin", () => {
+    expect(packedFiles).toContain("dist/cli.js");
   });
 
   // markdown-lint.ts resolves its config as dist/checkers/../../.markdownlintrc, i.e. the
   // package root. It falls back to {} silently when the file is absent, so leaving this
   // out of package.json "files" would not crash — `md lint --style` would just start
   // reporting rules (MD013 in particular) that are disabled everywhere else.
-  it("ships .markdownlintrc so --style uses the intended rule config", async () => {
-    expect(await packFileList()).toContain(".markdownlintrc");
+  it("ships .markdownlintrc so --style uses the intended rule config", () => {
+    expect(packedFiles).toContain(".markdownlintrc");
+  });
+
+  it("ships the docs but not the sources or tests", () => {
+    expect(packedFiles).toContain("README.md");
+    expect(packedFiles).toContain("LICENSE");
+    expect(packedFiles.some((f) => f.startsWith("src/"))).toBe(false);
+    expect(packedFiles.some((f) => f.startsWith("tests/"))).toBe(false);
   });
 });
