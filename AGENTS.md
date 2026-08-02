@@ -36,6 +36,14 @@ e2e coverage in `tests/e2e/cli.test.ts`.
   guards this.
 - **Never hand-edit `version` in `package.json` or `CHANGELOG.md`.** semantic-release owns
   both. `src/cli.ts` reads the version at runtime rather than inlining it.
+- **`engines` mirrors jsdom, and the CI matrix must stay inside it.** jsdom is the
+  most constrained dependency (`^22.22.2 || ^24.15.0 || >=26.0.0`); commander, katex
+  and markdownlint all require `>=22`. v1.0.2 shipped claiming `>=20` and crashed on
+  Node 20 with `webidl.util.markAsUncloneable is not a function`. When bumping any of
+  these, re-check `npm view <pkg> engines` and update both `engines` and the matrix.
+- **Release is gated on the CI workflow, not on push.** `release.yml` triggers via
+  `workflow_run` after CI succeeds, so a red matrix cannot publish. It deliberately
+  does not re-run the tests.
 - **ESLint uses the non-type-checked preset on purpose.** `tsc --strict` (`npm run typecheck`)
   is the type authority. typescript-eslint's `recommendedTypeChecked` flags ~26 long-standing
   intentional patterns here — uniformly-`async` commander handlers, `as unknown as` casts

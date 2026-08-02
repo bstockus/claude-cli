@@ -45,7 +45,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ["20.x", "22.x"]
+        # Must stay within package.json "engines". jsdom is the binding constraint
+        # (^22.22.2 || ^24.15.0 || >=26.0.0); Node 20 is EOL and unsupported.
+        node: ["22.x", "24.x"]
     steps:
       - uses: actions/checkout@v7
 

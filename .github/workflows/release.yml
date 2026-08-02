@@ -1,8 +1,14 @@
 name: Release
 
+# Gated on CI rather than on push. Running both off `push` let a release publish
+# while the CI matrix was still red: v1.0.2 shipped declaring Node 20 support that
+# jsdom 30 does not have, because this job only ever tested the .nvmrc version.
+# Waiting for CI also means the whole support matrix has passed, and lets this job
+# skip re-running the tests.
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -26,9 +32,19 @@ jobs:
   release:
     name: Publish to GitHub Packages
     runs-on: ubuntu-latest
+    # Only for a green CI run on a push to main — not for PR CI runs.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     steps:
       - uses: actions/checkout@v7
         with:
+          # Explicit ref: a workflow_run checkout otherwise defaults to the default
+          # branch tip anyway, and naming it keeps us on a branch rather than a
+          # detached HEAD, which semantic-release needs in order to push.
+          ref: main
           # semantic-release needs full history + tags to determine the last release
           fetch-depth: 0
           persist-credentials: false
@@ -42,9 +58,8 @@ jobs:
 
       - run: npm ci
 
-      # Gate: never publish a red build.
-      - name: Run tests
-        run: npm test
+      # No test step: this job only runs after the CI workflow went green across
+      # the full Node matrix, so re-running them here would duplicate that work.
 
       - name: semantic-release
         env:
