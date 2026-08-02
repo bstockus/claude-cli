@@ -1,0 +1,86 @@
+{
+  "name": "@bstockus/claude-cli",
+  "version": "0.0.0-development",
+  "type": "module",
+  "description": "A generic CLI toolkit for working with markdown files and related assets",
+  "license": "MIT",
+  "author": "Bryan Stockus",
+  "keywords": [
+    "markdown",
+    "cli",
+    "lint",
+    "markdownlint",
+    "mermaid",
+    "katex",
+    "claude"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bstockus/claude-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bstockus/claude-cli/issues"
+  },
+  "homepage": "https://github.com/bstockus/claude-cli#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "claude-cli": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    ".markdownlintrc",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run clean && npm run build",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "jsdom": "^26.0.0",
+    "katex": "^0.16.0",
+    "markdownlint": "^0.37.0",
+    "mermaid": "^11.12.0",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.0",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@eslint/js": "^9.17.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@types/jsdom": "^21.1.0",
+    "@types/katex": "^0.16.0",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.4.0",
+    "semantic-release": "^24.2.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^3.0.0"
+  }
+}

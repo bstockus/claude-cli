@@ -1,0 +1,253 @@
+import { describe, it, expect } from "vitest";
+import {
+  parseMarkdown,
+  parseMarkdownWithFrontmatter,
+  extractLinks,
+  extractHeadings,
+  extractCodeBlocks,
+  extractTasks,
+  extractTables,
+  isLineInCodeBlock,
+  slugify,
+} from "../../src/markdown-ast.js";
+
+describe("parseMarkdown", () => {
+  it("returns a Root node", () => {
+    const tree = parseMarkdown("# Hello");
+    expect(tree.type).toBe("root");
+  });
+});
+
+describe("slugify", () => {
+  it("converts heading text to slug", () => {
+    expect(slugify("My Section")).toBe("my-section");
+  });
+
+  it("removes special characters", () => {
+    expect(slugify("Hello, World!")).toBe("hello-world");
+  });
+
+  it("collapses multiple hyphens", () => {
+    expect(slugify("a - b -- c")).toBe("a-b-c");
+    expect(slugify("foo   bar")).toBe("foo-bar");
+  });
+
+  it("handles empty string", () => {
+    expect(slugify("")).toBe("");
+  });
+});
+
+describe("extractLinks", () => {
+  it("extracts links from markdown", () => {
+    const tree = parseMarkdown("See [docs](./README.md) here.");
+    const links = extractLinks(tree);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      linkText: "docs",
+      target: "./README.md",
+      isImage: false,
+      isExternal: false,
+      isAnchorOnly: false,
+    });
+  });
+
+  it("extracts images", () => {
+    const tree = parseMarkdown("![alt text](image.png)");
+    const links = extractLinks(tree);
+    expect(links).toHaveLength(1);
+    expect(links[0].isImage).toBe(true);
+    expect(links[0].linkText).toBe("alt text");
+  });
+
+  it("identifies external URLs", () => {
+    const tree = parseMarkdown("[site](https://example.com)");
+    const links = extractLinks(tree);
+    expect(links[0].isExternal).toBe(true);
+  });
+
+  it("identifies anchor-only links", () => {
+    const tree = parseMarkdown("[section](#heading)");
+    const links = extractLinks(tree);
+    expect(links[0].isAnchorOnly).toBe(true);
+  });
+
+  it("does not extract links inside code blocks", () => {
+    const content = "```\n[not a link](fake.md)\n```\n\n[real](real.md)";
+    const tree = parseMarkdown(content);
+    const links = extractLinks(tree);
+    expect(links).toHaveLength(1);
+    expect(links[0].target).toBe("real.md");
+  });
+
+  it("does not extract links inside inline code", () => {
+    const content = "See `[not a link](fake.md)` here.";
+    const tree = parseMarkdown(content);
+    const links = extractLinks(tree);
+    expect(links).toHaveLength(0);
+  });
+
+  it("extracts links with bold/italic text", () => {
+    const tree = parseMarkdown("[**bold link**](page.md)");
+    const links = extractLinks(tree);
+    expect(links[0].linkText).toBe("bold link");
+  });
+
+  it("preserves document order when mixing links and images", () => {
+    const content = "![img](a.png)\n\n[link](b.md)\n\n![img2](c.png)";
+    const tree = parseMarkdown(content);
+    const links = extractLinks(tree);
+    expect(links).toHaveLength(3);
+    expect(links[0].target).toBe("a.png");
+    expect(links[1].target).toBe("b.md");
+    expect(links[2].target).toBe("c.png");
+  });
+});
+
+describe("extractHeadings", () => {
+  it("extracts headings with depth and slug", () => {
+    const content = "# Title\n\n## Section\n\n### Subsection";
+    const tree = parseMarkdown(content);
+    const headings = extractHeadings(tree);
+    expect(headings).toHaveLength(3);
+    expect(headings[0]).toMatchObject({ depth: 1, text: "Title", slug: "title" });
+    expect(headings[1]).toMatchObject({ depth: 2, text: "Section", slug: "section" });
+    expect(headings[2]).toMatchObject({ depth: 3, text: "Subsection", slug: "subsection" });
+  });
+
+  it("includes correct line numbers", () => {
+    const content = "# Title\n\nSome text\n\n## Section";
+    const tree = parseMarkdown(content);
+    const headings = extractHeadings(tree);
+    expect(headings[0].line).toBe(1);
+    expect(headings[1].line).toBe(5);
+  });
+
+  it("returns empty array for no headings", () => {
+    const tree = parseMarkdown("Just text.\n\nMore text.");
+    expect(extractHeadings(tree)).toHaveLength(0);
+  });
+});
+
+describe("extractCodeBlocks", () => {
+  it("extracts fenced code blocks", () => {
+    const content = "# Title\n\n```typescript\nconst x = 1;\n```\n";
+    const tree = parseMarkdown(content);
+    const blocks = extractCodeBlocks(tree);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].lang).toBe("typescript");
+    expect(blocks[0].value).toBe("const x = 1;");
+  });
+
+  it("handles code blocks with no language", () => {
+    const content = "```\nplain code\n```";
+    const tree = parseMarkdown(content);
+    const blocks = extractCodeBlocks(tree);
+    expect(blocks[0].lang).toBeNull();
+  });
+
+  it("includes line range", () => {
+    const content = "text\n\n```js\na\nb\nc\n```\n";
+    const tree = parseMarkdown(content);
+    const blocks = extractCodeBlocks(tree);
+    expect(blocks[0].line).toBe(3);
+    expect(blocks[0].endLine).toBe(7);
+  });
+});
+
+describe("isLineInCodeBlock", () => {
+  it("returns true for lines inside a code block", () => {
+    const blocks = [{ line: 3, endLine: 7, lang: "js", value: "" }];
+    expect(isLineInCodeBlock(3, blocks)).toBe(true);
+    expect(isLineInCodeBlock(5, blocks)).toBe(true);
+    expect(isLineInCodeBlock(7, blocks)).toBe(true);
+  });
+
+  it("returns false for lines outside code blocks", () => {
+    const blocks = [{ line: 3, endLine: 7, lang: "js", value: "" }];
+    expect(isLineInCodeBlock(1, blocks)).toBe(false);
+    expect(isLineInCodeBlock(8, blocks)).toBe(false);
+  });
+});
+
+describe("extractTasks", () => {
+  it("extracts checked and unchecked tasks", () => {
+    const content = "- [x] Done task\n- [ ] Pending task\n- Regular item";
+    const tree = parseMarkdown(content);
+    const tasks = extractTasks(tree);
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]).toMatchObject({ checked: true, text: "Done task" });
+    expect(tasks[1]).toMatchObject({ checked: false, text: "Pending task" });
+  });
+
+  it("returns empty array when no tasks", () => {
+    const tree = parseMarkdown("- Normal item\n- Another item");
+    expect(extractTasks(tree)).toHaveLength(0);
+  });
+
+  it("includes line numbers", () => {
+    const content = "# Title\n\n- [x] First\n- [ ] Second";
+    const tree = parseMarkdown(content);
+    const tasks = extractTasks(tree);
+    expect(tasks[0].line).toBe(3);
+    expect(tasks[1].line).toBe(4);
+  });
+
+  it("handles nested task items", () => {
+    const content = "- [x] Parent\n  - [ ] Child";
+    const tree = parseMarkdown(content);
+    const tasks = extractTasks(tree);
+    expect(tasks).toHaveLength(2);
+  });
+});
+
+describe("extractTables", () => {
+  it("extracts table with headers and data", () => {
+    const content = "| Name | Type |\n|------|------|\n| foo  | bar  |\n| baz  | qux  |";
+    const tree = parseMarkdown(content);
+    const tables = extractTables(tree);
+    expect(tables).toHaveLength(1);
+    expect(tables[0].columns).toBe(2);
+    expect(tables[0].rows).toBe(2);
+    expect(tables[0].headers).toEqual(["Name", "Type"]);
+    expect(tables[0].data).toEqual([
+      ["foo", "bar"],
+      ["baz", "qux"],
+    ]);
+  });
+
+  it("returns empty array when no tables", () => {
+    const tree = parseMarkdown("# Just a heading\n\nSome text.");
+    expect(extractTables(tree)).toHaveLength(0);
+  });
+
+  it("includes line range", () => {
+    const content = "text\n\n| A | B |\n|---|---|\n| 1 | 2 |\n";
+    const tree = parseMarkdown(content);
+    const tables = extractTables(tree);
+    expect(tables[0].line).toBe(3);
+    expect(tables[0].endLine).toBe(5);
+  });
+
+  it("captures alignment info", () => {
+    const content = "| Left | Center | Right |\n|:-----|:------:|------:|\n| a | b | c |";
+    const tree = parseMarkdown(content);
+    const tables = extractTables(tree);
+    expect(tables[0].align).toEqual(["left", "center", "right"]);
+  });
+});
+
+describe("parseMarkdownWithFrontmatter", () => {
+  it("parses yaml frontmatter node", () => {
+    const content = "---\ntitle: Test\n---\n\n# Heading";
+    const tree = parseMarkdownWithFrontmatter(content);
+    const yamlNode = tree.children.find((n) => n.type === "yaml");
+    expect(yamlNode).toBeDefined();
+    expect((yamlNode as unknown as { value: string }).value).toBe("title: Test");
+  });
+
+  it("does not produce yaml node without frontmatter", () => {
+    const tree = parseMarkdownWithFrontmatter("# Just a heading");
+    const yamlNode = tree.children.find((n) => n.type === "yaml");
+    expect(yamlNode).toBeUndefined();
+  });
+});

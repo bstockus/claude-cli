@@ -1,0 +1,8 @@
+dist/
+node_modules/
+coverage/
+package-lock.json
+CHANGELOG.md
+
+# Fixtures are deliberately malformed — formatting them would break the tests
+tests/fixtures/
