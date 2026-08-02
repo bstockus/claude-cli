@@ -5,4 +5,4 @@ export interface Issue {
   message: string;
 }
 
-export type OutputFormat = "llm" | "human" | "json";
+export type OutputFormat = "llm" | "human" | "json" | "jsonl" | "sarif";

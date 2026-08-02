@@ -4,6 +4,7 @@ import type { Issue, OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireDirectory } from "../input.js";
+import { changedMarkdownFiles } from "../input-selection.js";
 
 interface LintDirOptions {
   format: string;
@@ -15,11 +16,12 @@ interface LintDirOptions {
   mermaid: boolean;
   katex: boolean;
   references: boolean;
+  changedSince?: string;
 }
 
 function resolveFormat(opts: LintDirOptions): OutputFormat {
   const fmt = opts.format;
-  if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
+  if (["llm", "human", "json", "jsonl", "sarif"].includes(fmt)) return fmt as OutputFormat;
   return "llm";
 }
 
@@ -31,6 +33,10 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
   let mdFiles: string[];
   try {
     mdFiles = findMarkdownFiles(dirPath, { include: opts.include, exclude: opts.exclude });
+    if (opts.changedSince) {
+      const changed = new Set(changedMarkdownFiles(opts.changedSince));
+      mdFiles = mdFiles.filter((file) => changed.has(file));
+    }
   } catch (error) {
     process.stderr.write(`Error: ${(error as Error).message}\n`);
     terminate(1);
@@ -38,6 +44,8 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
   if (mdFiles.length === 0) {
     if (format === "json") {
       process.stdout.write("[]\n");
+    } else if (format === "jsonl" || format === "sarif") {
+      process.stdout.write(formatIssues([], shownDir, format, { files: 0 }) + "\n");
     } else {
       process.stdout.write(`No .md files found in ${shownDir}\n`);
     }
@@ -94,6 +102,16 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
       process.stdout.write(output);
       return;
     }
+    if (format === "jsonl" || format === "sarif") {
+      const shown = allIssues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) }));
+      const output = formatIssues(shown, shownDir, format, { files: mdFiles.length }) + "\n";
+      if (allIssues.length) {
+        process.stderr.write(output);
+        terminate(2);
+      }
+      process.stdout.write(output);
+      return;
+    }
 
     const lines: string[] = [];
     for (const filePath of mdFiles) {
@@ -130,6 +148,15 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
           2,
         ) + "\n",
       );
+    } else if (format === "jsonl" || format === "sarif") {
+      process.stderr.write(
+        formatIssues(
+          allIssues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) })),
+          shownDir,
+          format,
+          { files: mdFiles.length },
+        ) + "\n",
+      );
     } else {
       for (const [file, issues] of Object.entries(issuesByFile)) {
         const shownFile = outputPath(file, opts);
@@ -152,6 +179,8 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
   } else {
     if (format === "json") {
       process.stdout.write("[]\n");
+    } else if (format === "jsonl" || format === "sarif") {
+      process.stdout.write(formatIssues([], shownDir, format, { files: mdFiles.length }) + "\n");
     } else if (format === "human") {
       process.stdout.write(
         `\x1b[32m✔ No issues found across ${mdFiles.length} file(s) in ${shownDir}\x1b[0m\n`,

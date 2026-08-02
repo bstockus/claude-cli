@@ -88,6 +88,21 @@ export class Workspace {
     this.cache.delete(path.resolve(filePath));
   }
 
+  registerDocument(filePath: string, content: string): string {
+    const absolute = path.resolve(filePath);
+    const tree = parseMarkdown(content);
+    this.cache.set(absolute, {
+      path: absolute,
+      content,
+      lines: content.split("\n"),
+      tree,
+      headings: extractHeadings(tree),
+      references: extractLinks(tree, content),
+      frontmatter: parseFrontmatter(content),
+    });
+    return absolute;
+  }
+
   markdownFiles(
     directory: string = this.root,
     selection: { include?: string[]; exclude?: string[] } = {},

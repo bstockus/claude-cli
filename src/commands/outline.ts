@@ -1,5 +1,4 @@
 import type { MdHeading } from "../markdown-ast.js";
-import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
 
@@ -16,7 +15,7 @@ interface OutlineNode {
   children: OutlineNode[];
 }
 
-function resolveFormat(opts: OutlineOptions): OutputFormat {
+function resolveFormat(opts: OutlineOptions): "llm" | "human" | "json" {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";

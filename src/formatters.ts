@@ -1,4 +1,5 @@
 import type { Issue, OutputFormat } from "./types.js";
+import { formatDiagnostics, type DiagnosticSummary } from "./automation.js";
 
 function formatLlm(issues: Issue[], file: string): string {
   if (issues.length === 0) return "";
@@ -24,7 +25,18 @@ function formatJson(issues: Issue[]): string {
   return JSON.stringify(issues, null, 2);
 }
 
-export function formatIssues(issues: Issue[], file: string, format: OutputFormat): string {
+export function formatIssues(
+  issues: Issue[],
+  file: string,
+  format: OutputFormat,
+  summary: Partial<DiagnosticSummary> = {},
+): string {
+  const automated = formatDiagnostics(issues, format, {
+    files: summary.files ?? (new Set(issues.map((issue) => issue.file)).size || 1),
+    findings: summary.findings ?? issues.length,
+    ...summary,
+  });
+  if (automated !== undefined) return automated;
   switch (format) {
     case "json":
       return formatJson(issues);

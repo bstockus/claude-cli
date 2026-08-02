@@ -137,6 +137,8 @@ describe("hasJsonOutput", () => {
   it("detects both spellings", () => {
     expect(hasJsonOutput(["md", "lint", "--format=json"])).toBe(true);
     expect(hasJsonOutput(["md", "lint", "--format", "json"])).toBe(true);
+    expect(hasJsonOutput(["md", "lint", "--format=jsonl"])).toBe(true);
+    expect(hasJsonOutput(["md", "lint", "--format", "sarif"])).toBe(true);
   });
 
   it("does not match other formats", () => {

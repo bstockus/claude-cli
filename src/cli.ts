@@ -21,6 +21,7 @@ import { tablesAction } from "./commands/tables.js";
 import { checkUrlsAction } from "./commands/check-urls.js";
 import { orphansAction } from "./commands/orphans.js";
 import { renameHeadingAction } from "./commands/rename-heading.js";
+import { renameFileAction } from "./commands/rename-file.js";
 import { graphAction } from "./commands/graph.js";
 import { validateFrontmatterAction } from "./commands/validate-frontmatter.js";
 import { auditAction } from "./commands/audit.js";
@@ -81,7 +82,9 @@ const configuredFormat =
   (configuredCommand ? projectConfig.commands[configuredCommand]?.format : undefined) ??
   projectConfig.output.format;
 const notifierArgv =
-  configuredFormat === "json" && !explicitFormat ? [...argv, "--format=json"] : argv;
+  ["json", "jsonl", "sarif"].includes(String(configuredFormat)) && !explicitFormat
+    ? [...argv, `--format=${String(configuredFormat)}`]
+    : argv;
 
 // Reads the cached result and may schedule a detached refresh. Never blocks and
 // never writes to a machine-readable stream — see src/update-notifier.ts.
@@ -124,14 +127,20 @@ const md = program
   );
 
 function common(command: Command): Command {
+  const formats = ["lint", "lint-dir", "audit", "validate-frontmatter", "check-urls"].includes(
+    command.name(),
+  )
+    ? "llm, human, json, jsonl, sarif"
+    : "llm, human, json";
   return command
-    .option("--format <fmt>", "Output format: llm, human, json")
-    .option("--paths <style>", "Path display: absolute, relative");
+    .option("--format <fmt>", `Output format: ${formats}`)
+    .option("--paths <style>", "Path display: absolute, relative")
+    .option("--stdin-name <path>", "Logical workspace path for stdin input");
 }
 
 common(md.command("lint"))
-  .description("Run all checks on a single markdown file")
-  .argument("<file>", "Path to the markdown file to validate")
+  .description("Run all checks on a single markdown file or multiple Markdown inputs")
+  .argument("<files...>", "Markdown files or globs to validate")
   .option("-s, --style", "Include markdown style checks (markdownlint)")
   .option("--no-style", "Disable markdown style checks (markdownlint)")
   .option("--mermaid", "Enable Mermaid checks")
@@ -140,13 +149,16 @@ common(md.command("lint"))
   .option("--no-katex", "Disable KaTeX checks")
   .option("--references", "Enable reference checks")
   .option("--no-references", "Disable reference checks")
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
   .addHelpText(
     "after",
     "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json\n\nExit codes:\n  0  All checks pass\n  2  One or more issues found",
   )
-  .action((file: string, opts: Record<string, unknown>) =>
+  .action((files: string[], opts: Record<string, unknown>) =>
     lintAction(
-      file,
+      files,
       commandOptions(
         "lint",
         {
@@ -154,6 +166,8 @@ common(md.command("lint"))
           mermaid: projectConfig.checks.mermaid,
           katex: projectConfig.checks.katex,
           references: projectConfig.checks.references,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
         },
         opts,
       ) as never,
@@ -176,6 +190,7 @@ common(md.command("lint-dir"))
   .option("--concurrency <n>", "Maximum files checked concurrently")
   .option("--include <glob>", "Markdown include glob (repeatable)", collect)
   .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
   .addHelpText(
     "after",
     "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json\n\nExit codes:\n  0  All files pass all checks\n  2  One or more issues found in any file",
@@ -320,15 +335,16 @@ common(md.command("graph"))
 
 common(md.command("validate-frontmatter"))
   .description("Validate Markdown frontmatter with schema and workspace rules")
-  .argument("<path>", "Markdown file or directory")
+  .argument("<paths...>", "Markdown files, directories, or globs")
   .option("--schema <file>", "JSON or YAML Schema file")
   .option("--include <glob>", "Markdown include glob (repeatable)", collect)
   .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
   .addHelpText(
     "after",
     "\nExit codes:\n  0  Frontmatter is valid\n  1  Configuration or schema error\n  2  Validation findings",
   )
-  .action((target: string, opts: Record<string, unknown>) =>
+  .action((target: string[], opts: Record<string, unknown>) =>
     validateFrontmatterAction(
       target,
       commandOptions(
@@ -367,6 +383,7 @@ common(md.command("audit"))
   .option("--concurrency <n>", "Maximum concurrent checks")
   .option("--timeout <ms>", "External URL timeout")
   .option("--retry <n>", "External URL retry count")
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
   .option("--entry <file>", "Graph entry point (repeatable)", collect)
   .option("--include <glob>", "Markdown include glob (repeatable)", collect)
   .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
@@ -521,23 +538,49 @@ common(md.command("tables"))
   );
 
 common(md.command("check-urls"))
-  .description("Validate external URLs by making HTTP requests")
-  .argument("<file>", "Path to the markdown file")
+  .description("Validate external URLs across Markdown inputs")
+  .argument("<inputs...>", "Markdown files, directories, globs, or -")
   .option("--timeout <ms>", "Request timeout per URL in milliseconds")
   .option("--concurrency <n>", "Maximum concurrent requests")
   .option("--retry <n>", "Number of retries on failure")
   .option("--include-ok", "Include successful URLs in output")
   .option("--no-include-ok", "Exclude successful URLs from output")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
+  .option("--ignore <glob>", "Ignore matching URL (repeatable)", collect)
+  .option("--ignore-domain <domain>", "Ignore domain and subdomains (repeatable)", collect)
+  .option("--allowed-status <code>", "Treat HTTP status as allowed (repeatable)", collect)
+  .option("--cache", "Use the URL result cache")
+  .option("--no-cache", "Disable the URL result cache")
+  .option("--cache-ttl <ms>", "URL cache lifetime in milliseconds")
+  .option("--head-fallback-status <code>", "HEAD status that triggers GET (repeatable)", collect)
+  .option("--report-redirects", "Report redirects and final destinations")
+  .option("--no-report-redirects", "Do not report redirects")
   .addHelpText(
     "after",
     "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json\n\nExit codes:\n  0  All URLs reachable (or no external URLs)\n  2  One or more URLs are broken",
   )
-  .action((file: string, opts: Record<string, unknown>) =>
+  .action((file: string[], opts: Record<string, unknown>) =>
     checkUrlsAction(
       file,
       commandOptions(
         "check-urls",
-        { timeout: "5000", concurrency: "5", retry: "1", includeOk: false },
+        {
+          timeout: "5000",
+          concurrency: "5",
+          retry: "1",
+          includeOk: false,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+          ignore: projectConfig.urls.ignore,
+          ignoreDomain: projectConfig.urls.ignoreDomains,
+          allowedStatus: projectConfig.urls.allowedStatuses,
+          cache: projectConfig.urls.cache,
+          cacheTtl: String(projectConfig.urls.cacheTtl),
+          headFallbackStatus: projectConfig.urls.headFallbackStatuses,
+          reportRedirects: projectConfig.urls.reportRedirects,
+        },
         opts,
       ) as never,
     ),
@@ -596,6 +639,30 @@ common(md.command("rename-heading"))
       newHeading,
       commandOptions(
         "rename-heading",
+        {
+          dryRun: false,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("rename-file"))
+  .description("Move a workspace file and update Markdown references")
+  .argument("<source>", "Existing Markdown document or referenced asset")
+  .argument("<destination>", "New path (parent directory must exist)")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .option("--dry-run", "Show changes without modifying files")
+  .option("--no-dry-run", "Apply changes")
+  .action((source: string, destination: string, opts: Record<string, unknown>) =>
+    renameFileAction(
+      source,
+      destination,
+      commandOptions(
+        "rename-file",
         {
           dryRun: false,
           include: projectConfig.files.include,

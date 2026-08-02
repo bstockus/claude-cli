@@ -1120,4 +1120,55 @@ describe("CLI e2e", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("moves a file and rewrites inbound and outbound references", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rename-file-e2e-"));
+    try {
+      fs.mkdirSync(path.join(tmpDir, "old"));
+      fs.mkdirSync(path.join(tmpDir, "new"));
+      fs.writeFileSync(path.join(tmpDir, ".claude-cli.yml"), "version: 1\n");
+      fs.writeFileSync(path.join(tmpDir, "target.md"), "# Target\n");
+      fs.writeFileSync(
+        path.join(tmpDir, "old", "source.md"),
+        "[Target](../target.md?x=1#target)\n",
+      );
+      fs.writeFileSync(path.join(tmpDir, "index.md"), "[Moved](old/source.md#top)\n");
+      const preview = await runCliIn(
+        tmpDir,
+        "md",
+        "rename-file",
+        "old/source.md",
+        "new/moved.md",
+        "--dry-run",
+        "-fj",
+        "--paths",
+        "relative",
+      );
+      expect(preview.exitCode).toBe(0);
+      expect(JSON.parse(preview.stdout).dryRun).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, "old", "source.md"))).toBe(true);
+      const moved = await runCliIn(tmpDir, "md", "rename-file", "old/source.md", "new/moved.md");
+      expect(moved.exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(tmpDir, "index.md"), "utf-8")).toContain("new/moved.md#top");
+      expect(fs.readFileSync(path.join(tmpDir, "new", "moved.md"), "utf-8")).toContain(
+        "../target.md?x=1#target",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes JSONL and SARIF findings to stderr", async () => {
+    const file = path.join(fixturesDir, "broken-katex.md");
+    const jsonl = await runCli("md", "lint", file, "--format", "jsonl");
+    expect(jsonl.exitCode).toBe(2);
+    const records = jsonl.stderr
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(records.at(-1).type).toBe("summary");
+    const sarif = await runCli("md", "lint", file, "--format", "sarif");
+    expect(sarif.exitCode).toBe(2);
+    expect(JSON.parse(sarif.stderr).version).toBe("2.1.0");
+  });
 });

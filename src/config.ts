@@ -37,12 +37,31 @@ export interface ResolvedConfig {
   frontmatter: { schema?: string; rules: FrontmatterRulesConfig };
   toc: { files: string[] };
   markdownlint: { config?: string };
-  urls: { ignore: string[]; allowedStatuses: number[] };
+  urls: {
+    ignore: string[];
+    ignoreDomains: string[];
+    allowedStatuses: number[];
+    cache: boolean;
+    cacheTtl: number;
+    headFallbackStatuses: number[];
+    reportRedirects: boolean;
+  };
   commands: Record<string, Record<string, unknown>>;
 }
 
 const COMMAND_OPTIONS: Record<string, Set<string>> = {
-  lint: new Set(["format", "paths", "style", "mermaid", "katex", "references"]),
+  lint: new Set([
+    "format",
+    "paths",
+    "style",
+    "mermaid",
+    "katex",
+    "references",
+    "stdinName",
+    "changedSince",
+    "include",
+    "exclude",
+  ]),
   "lint-dir": new Set([
     "format",
     "paths",
@@ -54,14 +73,33 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "references",
     "include",
     "exclude",
+    "changedSince",
   ]),
-  refs: new Set(["format", "paths", "external", "anchors", "images"]),
+  refs: new Set(["format", "paths", "external", "anchors", "images", "stdinName"]),
   "refs-to": new Set(["format", "paths", "include", "exclude"]),
-  headers: new Set(["format", "paths", "maxDepth"]),
-  outline: new Set(["format", "paths", "maxDepth"]),
-  toc: new Set(["format", "paths", "maxDepth", "minDepth", "ordered", "check", "write", "dryRun"]),
+  headers: new Set(["format", "paths", "maxDepth", "stdinName"]),
+  outline: new Set(["format", "paths", "maxDepth", "stdinName"]),
+  toc: new Set([
+    "format",
+    "paths",
+    "maxDepth",
+    "minDepth",
+    "ordered",
+    "check",
+    "write",
+    "dryRun",
+    "stdinName",
+  ]),
   graph: new Set(["format", "paths", "output", "entry", "include", "exclude"]),
-  "validate-frontmatter": new Set(["format", "paths", "schema", "include", "exclude"]),
+  "validate-frontmatter": new Set([
+    "format",
+    "paths",
+    "schema",
+    "include",
+    "exclude",
+    "stdinName",
+    "changedSince",
+  ]),
   audit: new Set([
     "format",
     "paths",
@@ -80,18 +118,38 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "entry",
     "timeout",
     "retry",
+    "changedSince",
   ]),
-  stats: new Set(["format", "paths"]),
-  "code-blocks": new Set(["format", "paths", "lang", "content"]),
-  structure: new Set(["format", "paths"]),
-  links: new Set(["format", "paths", "brokenOnly", "type"]),
-  section: new Set(["format", "paths", "includeHeading", "children", "raw"]),
-  frontmatter: new Set(["format", "paths", "key"]),
-  tasks: new Set(["format", "paths", "status", "summary"]),
-  tables: new Set(["format", "paths", "content", "index"]),
-  "check-urls": new Set(["format", "paths", "timeout", "concurrency", "retry", "includeOk"]),
+  stats: new Set(["format", "paths", "stdinName"]),
+  "code-blocks": new Set(["format", "paths", "lang", "content", "stdinName"]),
+  structure: new Set(["format", "paths", "stdinName"]),
+  links: new Set(["format", "paths", "brokenOnly", "type", "stdinName"]),
+  section: new Set(["format", "paths", "includeHeading", "children", "raw", "stdinName"]),
+  frontmatter: new Set(["format", "paths", "key", "stdinName"]),
+  tasks: new Set(["format", "paths", "status", "summary", "stdinName"]),
+  tables: new Set(["format", "paths", "content", "index", "stdinName"]),
+  "check-urls": new Set([
+    "format",
+    "paths",
+    "timeout",
+    "concurrency",
+    "retry",
+    "includeOk",
+    "include",
+    "exclude",
+    "stdinName",
+    "changedSince",
+    "ignore",
+    "ignoreDomain",
+    "allowedStatus",
+    "cache",
+    "cacheTtl",
+    "headFallbackStatus",
+    "reportRedirects",
+  ]),
   orphans: new Set(["format", "paths", "include", "exclude", "ignore", "entry"]),
   "rename-heading": new Set(["format", "paths", "directory", "dryRun", "include", "exclude"]),
+  "rename-file": new Set(["format", "paths", "dryRun", "include", "exclude"]),
 };
 
 const ROOT_KEYS = new Set([
@@ -106,6 +164,14 @@ const ROOT_KEYS = new Set([
   "commands",
   "frontmatter",
   "toc",
+]);
+
+const AUTOMATION_FORMAT_COMMANDS = new Set([
+  "lint",
+  "lint-dir",
+  "audit",
+  "validate-frontmatter",
+  "check-urls",
 ]);
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -154,6 +220,8 @@ const BOOLEAN_OPTIONS = new Set([
   "style",
   "summary",
   "external",
+  "cache",
+  "reportRedirects",
   "check",
   "write",
   "anchors",
@@ -177,8 +245,15 @@ const BOOLEAN_OPTIONS = new Set([
 
 function validateCommandOption(command: string, key: string, value: unknown): void {
   const name = `commands.${command}.${key}`;
-  if (key === "format" && value !== "llm" && value !== "human" && value !== "json") {
-    throw new Error(`${name} must be llm, human, or json`);
+  if (key === "format" && !["llm", "human", "json", "jsonl", "sarif"].includes(String(value))) {
+    throw new Error(`${name} must be llm, human, json, jsonl, or sarif`);
+  }
+  if (
+    key === "format" &&
+    (value === "jsonl" || value === "sarif") &&
+    !AUTOMATION_FORMAT_COMMANDS.has(command)
+  ) {
+    throw new Error(`${name} supports jsonl and sarif only for aggregate diagnostic commands`);
   }
   if (key === "paths" && value !== "absolute" && value !== "relative") {
     throw new Error(`${name} must be absolute or relative`);
@@ -197,6 +272,12 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
     if (!Number.isInteger(number) || number < 1)
       throw new Error(`${name} must be a positive integer`);
   }
+  if (key === "cacheTtl") {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 0) {
+      throw new Error(`${name} must be a non-negative integer`);
+    }
+  }
   if (key === "retry") {
     const number = Number(value);
     if (!Number.isInteger(number) || number < 0) {
@@ -209,10 +290,25 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
   if (key === "type" && !["internal", "external", "image", "anchor"].includes(String(value))) {
     throw new Error(`${name} must be internal, external, image, or anchor`);
   }
-  if (["lang", "key", "directory", "schema", "output"].includes(key) && typeof value !== "string") {
+  if (
+    ["lang", "key", "directory", "schema", "output", "stdinName", "changedSince"].includes(key) &&
+    typeof value !== "string"
+  ) {
     throw new Error(`${name} must be a string`);
   }
-  if (["include", "exclude", "ignore", "entry"].includes(key)) strings(value, name, []);
+  if (["include", "exclude", "ignore", "ignoreDomain", "entry"].includes(key))
+    strings(value, name, []);
+  if (["allowedStatus", "headFallbackStatus"].includes(key)) {
+    if (
+      !Array.isArray(value) ||
+      value.some(
+        (status) =>
+          !Number.isInteger(Number(status)) || Number(status) < 100 || Number(status) > 599,
+      )
+    ) {
+      throw new Error(`${name} must contain HTTP status codes from 100 to 599`);
+    }
+  }
   if (key === "output" && !["report", "mermaid", "dot"].includes(String(value))) {
     throw new Error(`${name} must be report, mermaid, or dot`);
   }
@@ -286,9 +382,9 @@ export function loadConfig(
   }
   const output = object(rootObject.output, "output");
   knownKeys(output, new Set(["format", "paths"]), "output");
-  const format = output.format ?? "llm";
-  if (format !== "llm" && format !== "human" && format !== "json") {
-    throw new Error("output.format must be llm, human, or json");
+  const format = (output.format ?? "llm") as OutputFormat;
+  if (!["llm", "human", "json", "jsonl", "sarif"].includes(String(format))) {
+    throw new Error("output.format must be llm, human, json, jsonl, or sarif");
   }
   const paths = output.paths ?? "absolute";
   if (paths !== "absolute" && paths !== "relative") {
@@ -350,13 +446,38 @@ export function loadConfig(
   const markdownlint = object(rootObject.markdownlint, "markdownlint");
   knownKeys(markdownlint, new Set(["config"]), "markdownlint");
   const urls = object(rootObject.urls, "urls");
-  knownKeys(urls, new Set(["ignore", "allowedStatuses"]), "urls");
+  knownKeys(
+    urls,
+    new Set([
+      "ignore",
+      "ignoreDomains",
+      "allowedStatuses",
+      "cache",
+      "cacheTtl",
+      "headFallbackStatuses",
+      "reportRedirects",
+    ]),
+    "urls",
+  );
   const allowedStatuses = urls.allowedStatuses ?? [];
   if (
     !Array.isArray(allowedStatuses) ||
     allowedStatuses.some((status) => !Number.isInteger(status) || status < 100 || status > 599)
   ) {
     throw new Error("urls.allowedStatuses must contain HTTP status codes from 100 to 599");
+  }
+  const headFallbackStatuses = urls.headFallbackStatuses ?? [400, 403, 405, 501];
+  if (
+    !Array.isArray(headFallbackStatuses) ||
+    headFallbackStatuses.some(
+      (status) => !Number.isInteger(status) || (status as number) < 100 || (status as number) > 599,
+    )
+  ) {
+    throw new Error("urls.headFallbackStatuses must contain HTTP status codes from 100 to 599");
+  }
+  const cacheTtl = urls.cacheTtl ?? 86_400_000;
+  if (!Number.isInteger(cacheTtl) || (cacheTtl as number) < 0) {
+    throw new Error("urls.cacheTtl must be a non-negative integer");
   }
 
   const commandsObject = object(rootObject.commands, "commands");
@@ -368,6 +489,11 @@ export function loadConfig(
     knownKeys(command, allowed, `commands.${name}`);
     for (const [key, option] of Object.entries(command)) validateCommandOption(name, key, option);
     commands[name] = { ...command };
+  }
+  for (const command of Object.values(commands)) {
+    if (typeof command.stdinName === "string") {
+      command.stdinName = path.resolve(base, command.stdinName);
+    }
   }
 
   const rootValue = optionalString(rootObject.root, "root") ?? ".";
@@ -452,7 +578,12 @@ export function loadConfig(
     },
     urls: {
       ignore: strings(urls.ignore, "urls.ignore", []),
+      ignoreDomains: strings(urls.ignoreDomains, "urls.ignoreDomains", []),
       allowedStatuses: [...allowedStatuses] as number[],
+      cache: boolean(urls.cache, "urls.cache", true),
+      cacheTtl: cacheTtl as number,
+      headFallbackStatuses: [...headFallbackStatuses] as number[],
+      reportRedirects: boolean(urls.reportRedirects, "urls.reportRedirects", false),
     },
     commands,
   };
