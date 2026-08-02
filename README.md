@@ -93,7 +93,7 @@ it appears at most 24 hours after a release.
 It is deliberately silent unless it is safe and useful to speak. No notice is printed when:
 
 - stderr is not a TTY — output is being piped or parsed
-- `--format json` is in use, on any command
+- `--format json`, `jsonl`, or `sarif` is in use
 - `CI` is set
 - `CLAUDE_CLI_NO_UPDATE_NOTIFIER=1` is set
 
@@ -122,10 +122,12 @@ Exit codes:
 
 All `md` subcommands support:
 
-- `--format <fmt>` - Output format: `llm` (default), `human`, `json`
+- `--format <fmt>` - Output format: `llm` (default), `human`, or `json`; `lint`,
+  `lint-dir`, `audit`, `validate-frontmatter`, and `check-urls` also support `jsonl` and `sarif`
 - `-fh` - Shorthand for `--format=human`
 - `-fj` - Shorthand for `--format=json`
 - `--paths <style>` - Display paths as `absolute` (default) or `relative` to the workspace
+- `--stdin-name <path>` - Give stdin a workspace path when file-relative links must be resolved
 - `--config <file>` - Use a specific `.claude-cli.yml`
 - `--no-config` - Disable automatic project configuration discovery
 
@@ -182,7 +184,12 @@ markdownlint:
 
 urls:
   ignore: ["https://example.invalid/**"]
+  ignoreDomains: ["private.example.com"]
   allowedStatuses: [401, 403]
+  cache: true
+  cacheTtl: 86400000
+  headFallbackStatuses: [400, 403, 405, 501]
+  reportRedirects: false
 
 commands:
   lint-dir:
@@ -200,6 +207,8 @@ commands:
 `commands` uses the CLI command names and camel-case option names. It accepts defaults for
 each command's non-positional options. Boolean defaults can always be reversed with the
 corresponding `--no-*` option. Repeated CLI list options replace configured lists.
+For URL checks, CLI options override `commands.check-urls`, which overrides the top-level
+`urls` values shown above, which override the built-in defaults.
 
 Directory commands use the configured include/exclude globs consistently. `.git` and
 `node_modules` are always excluded, and directory symlinks are not followed. `lint-dir` and
@@ -216,13 +225,14 @@ Directory commands use the configured include/exclude globs consistently. `.git`
 
 ### Validation
 
-#### `md lint <file>`
+#### `md lint <files...>`
 
 Run checks on a single markdown file (mermaid, KaTeX, references).
 
 ```bash
 claude-cli md lint path/to/file.md
 claude-cli md lint --style path/to/file.md
+claude-cli md lint "docs/**/*.md" --changed-since origin/main --format sarif
 ```
 
 Options:
@@ -231,6 +241,7 @@ Options:
 - `--[no-]mermaid` - Enable or disable Mermaid checks
 - `--[no-]katex` - Enable or disable KaTeX checks
 - `--[no-]references` - Enable or disable reference checks
+- `--changed-since <revision>` - Intersect inputs with changed and untracked Git files
 
 #### `md lint-dir [directory]`
 
@@ -249,14 +260,18 @@ Options:
 - `--concurrency <n>` - Maximum files checked concurrently
 - `--include <glob>` / `--exclude <glob>` - Override workspace selection (repeatable)
 - `--[no-]mermaid`, `--[no-]katex`, `--[no-]references` - Override configured checks
+- `--changed-since <revision>` - Check only selected changed and untracked files
 
-#### `md check-urls <file>`
+#### `md check-urls <inputs...>`
 
-Validate external URLs by making HTTP HEAD requests to verify they are reachable.
+Validate external URLs in files, directories, globs, or stdin. URLs are deduplicated across the
+selection while every source occurrence is retained in the report.
 
 ```bash
 claude-cli md check-urls path/to/file.md
 claude-cli md check-urls --include-ok --timeout 10000 path/to/file.md
+claude-cli md check-urls docs "guides/**/*.md" --report-redirects --format jsonl
+cat doc.md | claude-cli md check-urls - --stdin-name docs/doc.md
 ```
 
 Options:
@@ -265,14 +280,23 @@ Options:
 - `--concurrency <n>` - Maximum concurrent requests (default: 5)
 - `--retry <n>` - Number of retries on failure (default: 1)
 - `--include-ok` - Include successful URLs in output (default: failures only)
+- `--ignore <glob>` / `--ignore-domain <domain>` - Ignore URLs (repeatable)
+- `--allowed-status <code>` - Treat a status as successful (repeatable)
+- `--[no-]cache`, `--cache-ttl <ms>` - Control raw-result caching (default: 24 hours)
+- `--head-fallback-status <code>` - Status that retries with GET (repeatable)
+- `--report-redirects` - Include redirect state and final destinations
+- `--changed-since <revision>` - Intersect the input selection with Git changes
 
-Falls back to GET on 405 Method Not Allowed. Respects 429 rate limiting with Retry-After.
+The cache is `${XDG_CACHE_HOME:-~/.cache}/claude-cli/url-checks.json`; missing, stale, corrupt,
+or unwritable cache data is treated as a miss. HEAD falls back to GET on 400, 403, 405, and 501
+by default.
 
-#### `md validate-frontmatter <path>`
+#### `md validate-frontmatter <paths...>`
 
 Validate one Markdown file or all selected files in a directory. A local JSON or YAML
 Schema can be supplied with `--schema`; configured schema and shortcut rules are applied
 cumulatively. Repeated `--include` and `--exclude` options override workspace selection.
+Files, directories, globs, stdin, and `--changed-since` are supported.
 
 ```bash
 claude-cli md validate-frontmatter docs --schema schemas/document.yml
@@ -294,6 +318,11 @@ Use `--[no-]frontmatter`, `--[no-]graph`, and `--[no-]toc` to select workspace c
 Lint selection, concurrency, include/exclude, graph entry, and URL timeout/retry options
 are also available. JSON output is one object containing enabled and skipped checks,
 totals, normalized findings, and graph metrics.
+
+JSONL writes one finding/result per line followed by a summary record. SARIF output is SARIF
+2.1.0 with checker rule IDs and artifact line locations. Machine payloads go to stdout on success
+and stderr when findings cause exit `2`; update notices are suppressed for every machine format.
+Paths are absolute unless `--paths relative` is selected.
 
 ### References
 
@@ -523,6 +552,21 @@ Options:
 
 ### Modification
 
+#### `md rename-file <source> <destination>`
+
+Move a Markdown file or referenced asset within the workspace and update selected inline and
+reference-style links/images. Query strings, fragments, root-relative style, and URL encoding are
+preserved; outbound relative links in a moved Markdown document are recomputed.
+
+```bash
+claude-cli md rename-file docs/old.md guides/new.md --dry-run --format json
+claude-cli md rename-file images/old-name.png assets/new-name.png
+```
+
+The source and destination must remain inside the workspace. The command refuses symlink or
+non-file sources, existing destinations, and missing destination parents. `--include` and
+`--exclude` bound the Markdown reference scan.
+
 #### `md rename-heading <file> <old-heading> <new-heading>`
 
 Rename a heading and update all internal anchor references that point to it.
@@ -538,7 +582,8 @@ Options:
 - `--include <glob>` / `--exclude <glob>` - Limit files scanned for cross-file updates
 - `--dry-run` - Show what would change without modifying files
 
-This is the only `md` command that modifies files. Use `--dry-run` first.
+Both rename commands can modify files. `toc --write` also updates its explicitly marked block.
+Use `--dry-run` before rename operations.
 
 ## Checks
 

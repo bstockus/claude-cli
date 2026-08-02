@@ -11,6 +11,7 @@ interface RefsOptions {
   external: boolean;
   anchors: boolean;
   images: boolean;
+  stdinName?: string;
 }
 
 interface ResolvedRef {
@@ -87,6 +88,8 @@ function formatResults(refs: ResolvedRef[], filePath: string, format: OutputForm
 }
 
 export async function refsAction(file: string, opts: RefsOptions): Promise<void> {
+  if (file === "-" && !opts.stdinName)
+    throw new Error("--stdin-name is required for refs with stdin");
   const format = resolveFormat(opts);
   const filePath = requireFile(file, opts);
   const shownPath = outputPath(filePath, opts);

@@ -10,6 +10,7 @@ interface LinksOptions {
   format: string;
   brokenOnly: boolean;
   type?: string;
+  stdinName?: string;
 }
 
 function resolveFormat(opts: LinksOptions): OutputFormat {
@@ -33,6 +34,8 @@ function checkExists(link: MdLink, sourceFile: string): boolean | null {
 }
 
 export async function linksAction(file: string, opts: LinksOptions): Promise<void> {
+  if (file === "-" && !opts.stdinName)
+    throw new Error("--stdin-name is required for links with stdin");
   const format = resolveFormat(opts);
   const filePath = requireFile(file, opts);
   const shownPath = outputPath(filePath, opts);

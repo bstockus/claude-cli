@@ -166,8 +166,8 @@ export function isNewerVersion(candidate: string, current: string): boolean {
 export function hasJsonOutput(argv: readonly string[]): boolean {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--format=json") return true;
-    if (arg === "--format" && argv[i + 1] === "json") return true;
+    if (/^--format=(?:json|jsonl|sarif)$/.test(arg)) return true;
+    if (arg === "--format" && ["json", "jsonl", "sarif"].includes(argv[i + 1] ?? "")) return true;
   }
   return false;
 }

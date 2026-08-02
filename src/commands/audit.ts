@@ -10,6 +10,8 @@ import { outputPath, runtime } from "../runtime.js";
 import { requireDirectory } from "../input.js";
 import { terminate } from "../command-result.js";
 import type { Issue } from "../types.js";
+import { formatDiagnostics } from "../automation.js";
+import { changedMarkdownFiles } from "../input-selection.js";
 
 interface AuditOptions extends TocOptions {
   summary: boolean;
@@ -27,6 +29,7 @@ interface AuditOptions extends TocOptions {
   entry: string[];
   timeout: string;
   retry: string;
+  changedSince?: string;
 }
 
 interface AuditResult {
@@ -89,10 +92,14 @@ function graphFindings(graph: WorkspaceGraph): Issue[] {
 
 export async function auditAction(directory: string, opts: AuditOptions): Promise<void> {
   const dir = requireDirectory(directory, opts);
-  const files = runtime().workspace.markdownFiles(dir, {
+  let files = runtime().workspace.markdownFiles(dir, {
     include: opts.include,
     exclude: opts.exclude,
   });
+  if (opts.changedSince) {
+    const changed = new Set(changedMarkdownFiles(opts.changedSince));
+    files = files.filter((file) => changed.has(file));
+  }
   const enabled: string[] = [];
   const skipped: string[] = [];
   let findings: Issue[] = [];
@@ -178,7 +185,16 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
             /^https?:/i.test(ref.target) &&
             !runtime().config.urls.ignore.some((pattern) =>
               minimatch(ref.target, pattern, { nonegate: true }),
-            ),
+            ) &&
+            !runtime().config.urls.ignoreDomains.some((domain) => {
+              try {
+                const host = new URL(ref.target).hostname.toLowerCase();
+                const normalized = domain.toLowerCase().replace(/^\*\./, "");
+                return host === normalized || host.endsWith(`.${normalized}`);
+              } catch {
+                return false;
+              }
+            }),
         )
         .map((ref) => ({ file, line: ref.line, url: ref.target })),
     );
@@ -186,6 +202,10 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
       timeout: parseInt(opts.timeout, 10) || 5000,
       concurrency: parseInt(opts.concurrency, 10) || 5,
       retries: parseInt(opts.retry, 10) || 0,
+      allowedStatuses: runtime().config.urls.allowedStatuses,
+      headFallbackStatuses: runtime().config.urls.headFallbackStatuses,
+      cache: runtime().config.urls.cache,
+      cacheTtl: runtime().config.urls.cacheTtl,
     });
     findings.push(
       ...results
@@ -240,6 +260,13 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
   };
   let payload: string;
   if (opts.format === "json") payload = JSON.stringify(result, null, 2);
+  else if (opts.format === "jsonl" || opts.format === "sarif")
+    payload = formatDiagnostics(shown, opts.format, {
+      files: files.length,
+      findings: shown.length,
+      enabled,
+      skipped,
+    })!;
   else if (opts.summary)
     payload = [
       `Audit: ${result.totals.files} file(s), ${result.totals.findings} finding(s)`,

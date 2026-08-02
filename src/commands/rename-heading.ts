@@ -59,6 +59,7 @@ export async function renameHeadingAction(
   newHeading: string,
   opts: RenameHeadingOptions,
 ): Promise<void> {
+  if (file === "-") throw new Error("rename-heading does not accept stdin");
   const format = resolveFormat(opts);
   const filePath = requireFile(file, opts);
 

@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { FrontmatterValidator } from "../frontmatter-validation.js";
 import { formatIssues } from "../formatters.js";
 import { outputPath, runtime } from "../runtime.js";
@@ -11,7 +9,10 @@ interface Options {
   schema?: string;
   include: string[];
   exclude: string[];
+  stdinName?: string;
+  changedSince?: string;
 }
+import { resolveMarkdownInputs } from "../input-selection.js";
 
 export function frontmatterIssues(files: string[], schema?: string): Issue[] {
   const validator = new FrontmatterValidator(
@@ -21,27 +22,31 @@ export function frontmatterIssues(files: string[], schema?: string): Issue[] {
   return validator.validateMany(files.map((file) => runtime().workspace.document(file)));
 }
 
-export async function validateFrontmatterAction(target: string, opts: Options): Promise<void> {
-  const resolved = path.resolve(target);
-  if (!fs.existsSync(resolved)) throw new Error(`Path not found: ${resolved}`);
-  const files = fs.statSync(resolved).isDirectory()
-    ? runtime().workspace.markdownFiles(resolved, { include: opts.include, exclude: opts.exclude })
-    : fs.statSync(resolved).isFile()
-      ? [resolved]
-      : [];
-  if (!files.length && !fs.statSync(resolved).isDirectory())
-    throw new Error(`Path is not a file or directory: ${resolved}`);
-  const schema = opts.schema ? path.resolve(opts.schema) : undefined;
+export async function validateFrontmatterAction(
+  target: string | string[],
+  opts: Options,
+): Promise<void> {
+  const inputs = Array.isArray(target) ? target : [target];
+  const files = resolveMarkdownInputs(inputs, opts);
+  const schema = opts.schema;
   const issues = frontmatterIssues(files, schema);
   const shown = issues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) }));
   const format = (
-    opts.format === "json" || opts.format === "human" ? opts.format : "llm"
+    ["json", "jsonl", "sarif", "human"].includes(opts.format) ? opts.format : "llm"
   ) as OutputFormat;
+  const label =
+    inputs.length === 1
+      ? outputPath(files[0] ?? runtime().config.root, opts)
+      : `${files.length} files`;
   if (issues.length) {
-    process.stderr.write(formatIssues(shown, outputPath(resolved, opts), format) + "\n");
+    process.stderr.write(formatIssues(shown, label, format, { files: files.length }) + "\n");
     terminate(2);
   }
   process.stdout.write(
-    format === "json" ? "[]\n" : `Frontmatter valid in ${files.length} file(s)\n`,
+    format === "json"
+      ? "[]\n"
+      : format === "jsonl" || format === "sarif"
+        ? formatIssues([], label, format, { files: files.length }) + "\n"
+        : `Frontmatter valid in ${files.length} file(s)\n`,
   );
 }

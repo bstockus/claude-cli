@@ -152,6 +152,9 @@ write behavior safe and predictable.
 
 ### 5. Safe file rename and move
 
+Status: implemented by workspace-bounded `md rename-file` with dry-run, structured reports,
+link rewriting, and staged writes.
+
 Add `md rename-file` or `md move` as the natural companion to `md rename-heading`. It should:
 
 - Find and update inbound Markdown links and image references
@@ -164,6 +167,9 @@ Add `md rename-file` or `md move` as the natural companion to `md rename-heading
 Project-level include and exclude rules should define the reference-update boundary.
 
 ### 6. Better automation inputs and outputs
+
+Status: implemented with shared multi-input/stdin resolution, changed-file selection, portable
+paths, JSON Lines, and SARIF for aggregate diagnostic commands.
 
 Improve composability for agents, editors, hooks, and CI by adding:
 
@@ -178,6 +184,9 @@ Any new machine-readable format must retain the update notifier's guarantee that
 never corrupt the payload stream.
 
 ### 7. Directory URL validation with caching
+
+Status: implemented with workspace input expansion, deduplicated checks, configurable raw-result
+caching, ignore/status/fallback rules, redirect reporting, and reuse by `md audit --external`.
 
 Extend `md check-urls` to accept a directory or shared workspace selection. Add:
 

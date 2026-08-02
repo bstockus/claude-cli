@@ -80,4 +80,30 @@ commands:
       "cannot be used together",
     );
   });
+
+  it("loads URL cache and fallback configuration", () => {
+    const configPath = writeConfig(`
+version: 1
+urls:
+  ignore: ["https://ignored.example/**"]
+  ignoreDomains: [private.example]
+  allowedStatuses: [401]
+  cache: false
+  cacheTtl: 1200
+  headFallbackStatuses: [403, 405]
+  reportRedirects: true
+commands:
+  check-urls:
+    allowedStatus: [418]
+`);
+    const config = loadConfig({ explicitPath: configPath, disabled: false });
+    expect(config.urls).toMatchObject({
+      ignoreDomains: ["private.example"],
+      cache: false,
+      cacheTtl: 1200,
+      headFallbackStatuses: [403, 405],
+      reportRedirects: true,
+    });
+    expect(config.commands["check-urls"].allowedStatus).toEqual([418]);
+  });
 });

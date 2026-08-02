@@ -54,8 +54,14 @@ export function commandOptions<T extends Record<string, unknown>>(
     }),
   );
   const resolved = resolveCommandOptions(runtime().config, command, builtins, explicit);
-  if (resolved.format !== "llm" && resolved.format !== "human" && resolved.format !== "json") {
+  if (!["llm", "human", "json", "jsonl", "sarif"].includes(String(resolved.format))) {
     throw new Error(`Invalid output format: ${String(resolved.format)}`);
+  }
+  if (
+    (resolved.format === "jsonl" || resolved.format === "sarif") &&
+    !["lint", "lint-dir", "audit", "validate-frontmatter", "check-urls"].includes(command)
+  ) {
+    throw new Error(`${resolved.format} output is not supported by md ${command}`);
   }
   if (resolved.paths !== "absolute" && resolved.paths !== "relative") {
     throw new Error(`Invalid path display style: ${String(resolved.paths)}`);
