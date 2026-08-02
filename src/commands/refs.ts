@@ -1,7 +1,10 @@
 import fs from "node:fs";
-import path from "node:path";
 import { extractReferences } from "../refs.js";
 import type { OutputFormat } from "../types.js";
+import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface RefsOptions {
   format: string;
@@ -18,6 +21,17 @@ interface ResolvedRef {
   isExternal: boolean;
   isAnchorOnly: boolean;
   exists: boolean | null; // null for external/anchor-only (not checked)
+}
+
+function publicRef(ref: ReturnType<typeof extractReferences>[number]): Omit<ResolvedRef, "exists"> {
+  return {
+    line: ref.line,
+    linkText: ref.linkText,
+    target: ref.target,
+    isImage: ref.isImage,
+    isExternal: ref.isExternal,
+    isAnchorOnly: ref.isAnchorOnly,
+  };
 }
 
 function resolveFormat(opts: RefsOptions): OutputFormat {
@@ -74,16 +88,10 @@ function formatResults(refs: ResolvedRef[], filePath: string, format: OutputForm
 
 export async function refsAction(file: string, opts: RefsOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const allRefs = extractReferences(content);
-  const dir = path.dirname(filePath);
+  const allRefs = runtime().workspace.document(filePath).references;
 
   // Filter based on flags
   const filtered = allRefs.filter((r) => {
@@ -96,19 +104,19 @@ export async function refsAction(file: string, opts: RefsOptions): Promise<void>
   // Resolve existence
   const resolved: ResolvedRef[] = filtered.map((r) => {
     if (r.isExternal || r.isAnchorOnly) {
-      return { ...r, exists: null };
+      return { ...publicRef(r), exists: null };
     }
-    const [targetFile] = r.target.split("#", 2);
-    const resolvedPath = path.resolve(dir, targetFile);
-    return { ...r, exists: fs.existsSync(resolvedPath) };
+    const targetFile = splitLocalTarget(r.target).path;
+    const resolvedPath = resolveLocalPath(filePath, targetFile, runtime().config.root);
+    return { ...publicRef(r), exists: fs.existsSync(resolvedPath) };
   });
 
-  const output = formatResults(resolved, filePath, format);
+  const output = formatResults(resolved, shownPath, format);
   const missing = resolved.filter((r) => r.exists === false);
 
   if (missing.length > 0) {
     process.stderr.write(output + "\n");
-    process.exit(2);
+    terminate(2);
   } else {
     process.stdout.write(output + "\n");
   }

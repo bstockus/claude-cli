@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractTasks } from "../markdown-ast.js";
+import { extractTasks } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireFile } from "../input.js";
 
 interface TasksOptions {
   format: string;
@@ -17,16 +17,10 @@ function resolveFormat(opts: TasksOptions): OutputFormat {
 
 export async function tasksAction(file: string, opts: TasksOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  let tasks = extractTasks(tree);
+  let tasks = extractTasks(runtime().workspace.document(filePath).tree);
 
   if (opts.status === "done") {
     tasks = tasks.filter((t) => t.checked);
@@ -39,7 +33,7 @@ export async function tasksAction(file: string, opts: TasksOptions): Promise<voi
   const total = tasks.length;
 
   if (format === "json") {
-    const result: Record<string, unknown> = { file: filePath, total, done, pending };
+    const result: Record<string, unknown> = { file: shownPath, total, done, pending };
     if (!opts.summary) {
       result.tasks = tasks.map((t) => ({ line: t.line, checked: t.checked, text: t.text }));
     }
@@ -55,22 +49,22 @@ export async function tasksAction(file: string, opts: TasksOptions): Promise<voi
   if (opts.summary) {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     process.stdout.write(
-      bold(`${total} task(s) in ${filePath}:`) + ` ${done} done, ${pending} pending (${pct}%)\n`,
+      bold(`${total} task(s) in ${shownPath}:`) + ` ${done} done, ${pending} pending (${pct}%)\n`,
     );
     return;
   }
 
   if (total === 0) {
     if (isHuman) {
-      process.stdout.write(`\x1b[33mNo tasks found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[33mNo tasks found in ${shownPath}\x1b[0m\n`);
     } else {
-      process.stdout.write(`No tasks found in ${filePath}\n`);
+      process.stdout.write(`No tasks found in ${shownPath}\n`);
     }
     return;
   }
 
   const lines: string[] = [];
-  lines.push(bold(`${total} task(s) in ${filePath} (${done} done, ${pending} pending):`));
+  lines.push(bold(`${total} task(s) in ${shownPath} (${done} done, ${pending} pending):`));
   for (const t of tasks) {
     const marker = t.checked ? green("[x]") : yellow("[ ]");
     lines.push(`  L${t.line}  ${marker} ${t.text}`);

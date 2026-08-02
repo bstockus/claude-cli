@@ -94,6 +94,21 @@ describe("checkReferences", () => {
     expect(issues[0].checker).toBe("ref/anchor");
   });
 
+  it("accepts encoded Unicode anchor fragments", () => {
+    const content = "# Über café\n\n[link](#%C3%BCber-caf%C3%A9)\n";
+    const issues: Issue[] = [];
+    checkReferences("/tmp/test.md", content, issues);
+    expect(issues).toHaveLength(0);
+  });
+
+  it("validates reference-style links", () => {
+    const filePath = path.join(tmpDir, "test.md");
+    const content = "# Test\n\n[link][target]\n\n[target]: ./existing.md#sub-heading\n";
+    const issues: Issue[] = [];
+    checkReferences(filePath, content, issues);
+    expect(issues).toHaveLength(0);
+  });
+
   it("skips links inside code blocks", () => {
     const content = "# Test\n\n```\n[link](./nonexistent.md)\n```\n";
     const issues: Issue[] = [];

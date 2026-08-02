@@ -1,7 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractLinks } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { minimatch } from "minimatch";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface CheckUrlsOptions {
   format: string;
@@ -25,10 +26,11 @@ function resolveFormat(opts: CheckUrlsOptions): OutputFormat {
   return "llm";
 }
 
-async function checkUrl(
+export async function checkUrl(
   url: string,
   timeout: number,
   retries: number,
+  allowedStatuses: readonly number[] = [],
 ): Promise<{ status: number | null; ok: boolean; error?: string }> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -55,7 +57,9 @@ async function checkUrl(
         continue;
       }
 
-      const ok = response.status >= 200 && response.status < 400;
+      const ok =
+        (response.status >= 200 && response.status < 400) ||
+        allowedStatuses.includes(response.status);
       return { status: response.status, ok };
     } catch (err: unknown) {
       if (attempt < retries) continue;
@@ -85,27 +89,32 @@ async function runWithConcurrency<T>(
 
 export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
-  const timeout = parseInt(opts.timeout, 10) || 5000;
-  const concurrency = parseInt(opts.concurrency, 10) || 5;
-  const retries = parseInt(opts.retry, 10) || 1;
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
+  const parsedTimeout = parseInt(opts.timeout, 10);
+  const parsedConcurrency = parseInt(opts.concurrency, 10);
+  const parsedRetries = parseInt(opts.retry, 10);
+  const timeout = Number.isNaN(parsedTimeout) ? 5000 : Math.max(1, parsedTimeout);
+  const concurrency = Number.isNaN(parsedConcurrency) ? 5 : Math.max(1, parsedConcurrency);
+  const retries = Number.isNaN(parsedRetries) ? 1 : Math.max(0, parsedRetries);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  const links = extractLinks(tree).filter((l) => l.isExternal && /^https?:/.test(l.target));
+  const document = runtime().workspace.document(filePath);
+  const ignored = runtime().config.urls.ignore;
+  const links = document.references.filter(
+    (l) =>
+      l.isExternal &&
+      /^https?:/i.test(l.target) &&
+      !ignored.some((pattern) => minimatch(l.target, pattern, { nonegate: true })),
+  );
 
   if (links.length === 0) {
     if (format === "json") {
       process.stdout.write(
-        JSON.stringify({ file: filePath, total: 0, ok: 0, broken: 0, results: [] }, null, 2) + "\n",
+        JSON.stringify({ file: shownPath, total: 0, ok: 0, broken: 0, results: [] }, null, 2) +
+          "\n",
       );
     } else {
-      process.stdout.write(`No external URLs found in ${filePath}\n`);
+      process.stdout.write(`No external URLs found in ${shownPath}\n`);
     }
     return;
   }
@@ -124,7 +133,7 @@ export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Pro
   // Check each unique URL
   const urlResults = new Map<string, { status: number | null; ok: boolean; error?: string }>();
   await runWithConcurrency([...urlLines.keys()], concurrency, async (url) => {
-    const result = await checkUrl(url, timeout, retries);
+    const result = await checkUrl(url, timeout, retries, runtime().config.urls.allowedStatuses);
     urlResults.set(url, result);
   });
 
@@ -146,12 +155,12 @@ export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Pro
   if (format === "json") {
     process.stdout.write(
       JSON.stringify(
-        { file: filePath, total: results.length, ok: okCount, broken: brokenCount, results },
+        { file: shownPath, total: results.length, ok: okCount, broken: brokenCount, results },
         null,
         2,
       ) + "\n",
     );
-    if (brokenCount > 0) process.exit(2);
+    if (brokenCount > 0) terminate(2);
     return;
   }
 
@@ -163,7 +172,9 @@ export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Pro
   const displayResults = opts.includeOk ? results : results.filter((r) => !r.ok);
 
   if (displayResults.length === 0 && !opts.includeOk) {
-    process.stdout.write(green(`All ${results.length} URL(s) in ${filePath} are reachable`) + "\n");
+    process.stdout.write(
+      green(`All ${results.length} URL(s) in ${shownPath} are reachable`) + "\n",
+    );
     return;
   }
 
@@ -171,11 +182,11 @@ export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Pro
   if (opts.includeOk) {
     lines.push(
       bold(
-        `${results.length} URL(s) checked in ${filePath} (${okCount} ok, ${brokenCount} broken):`,
+        `${results.length} URL(s) checked in ${shownPath} (${okCount} ok, ${brokenCount} broken):`,
       ),
     );
   } else {
-    lines.push(bold(`${brokenCount} broken URL(s) in ${filePath}:`));
+    lines.push(bold(`${brokenCount} broken URL(s) in ${shownPath}:`));
   }
 
   for (const r of displayResults) {
@@ -190,7 +201,7 @@ export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Pro
 
   if (brokenCount > 0) {
     process.stderr.write(lines.join("\n") + "\n");
-    process.exit(2);
+    terminate(2);
   } else {
     process.stdout.write(lines.join("\n") + "\n");
   }

@@ -2,12 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseMarkdown, extractHeadings, extractLinks, slugify } from "../markdown-ast.js";
 import { findMarkdownFiles } from "../lint.js";
+import { replaceFragment, resolveLocalPath, splitLocalTarget } from "../link-target.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 import type { OutputFormat } from "../types.js";
 
 interface RenameHeadingOptions {
   format: string;
   directory?: string;
   dryRun: boolean;
+  include: string[];
+  exclude: string[];
 }
 
 interface AnchorUpdate {
@@ -17,14 +23,34 @@ interface AnchorUpdate {
   newRef: string;
 }
 
+interface Edit {
+  start: number;
+  end: number;
+  value: string;
+}
+
 function resolveFormat(opts: RenameHeadingOptions): OutputFormat {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function applyEdits(content: string, edits: Edit[]): string {
+  let result = content;
+  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+    result = result.slice(0, edit.start) + edit.value + result.slice(edit.end);
+  }
+  return result;
+}
+
+function headingTextSpan(content: string, line: number): { start: number; end: number } {
+  const lines = content.split("\n");
+  const startOfLine = lines
+    .slice(0, line - 1)
+    .reduce((total, value) => total + value.length + 1, 0);
+  const raw = lines[line - 1] ?? "";
+  const prefix = raw.match(/^(#{1,6}\s+)/)?.[0] ?? "";
+  return { start: startOfLine + prefix.length, end: startOfLine + raw.length };
 }
 
 export async function renameHeadingAction(
@@ -34,163 +60,149 @@ export async function renameHeadingAction(
   opts: RenameHeadingOptions,
 ): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
-
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
+  const filePath = requireFile(file, opts);
 
   const content = fs.readFileSync(filePath, "utf-8");
   const tree = parseMarkdown(content);
   const headings = extractHeadings(tree);
-
-  // Find the old heading
   const oldLower = oldHeading.toLowerCase();
   const oldSlugInput = slugify(oldHeading);
   const matchIdx = headings.findIndex(
-    (h) => h.text.toLowerCase() === oldLower || h.slug === oldSlugInput,
+    (heading) => heading.text.toLowerCase() === oldLower || heading.slug === oldSlugInput,
   );
-
   if (matchIdx === -1) {
     process.stderr.write(`Error: Heading not found: ${oldHeading}\n`);
-    process.exit(1);
+    terminate(1);
   }
 
   const matched = headings[matchIdx];
-  const oldSlug = matched.slug;
-  const newSlug = slugify(newHeading);
-
-  // Check for duplicate slug
-  const existingSlugs = headings.filter((_, i) => i !== matchIdx).map((h) => h.slug);
-  if (existingSlugs.includes(newSlug)) {
-    process.stderr.write(`Error: A heading with slug "${newSlug}" already exists in ${filePath}\n`);
-    process.exit(1);
+  const headingSpan = headingTextSpan(content, matched.line);
+  const headingEdit: Edit = { ...headingSpan, value: newHeading };
+  const contentWithHeading = applyEdits(content, [headingEdit]);
+  const newHeadings = extractHeadings(parseMarkdown(contentWithHeading));
+  const slugChanges = new Map<string, string>();
+  for (let index = 0; index < headings.length; index++) {
+    if (headings[index].slug !== newHeadings[index].slug) {
+      slugChanges.set(headings[index].slug, newHeadings[index].slug);
+    }
   }
+  const newSlug = newHeadings[matchIdx].slug;
 
-  // Collect all files to scan for anchor updates
-  const filesToScan: string[] = [filePath];
+  const filesToScan = [filePath];
   if (opts.directory) {
-    const dirPath = path.resolve(opts.directory);
-    if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
-      const dirFiles = findMarkdownFiles(dirPath).filter((f) => f !== filePath);
-      filesToScan.push(...dirFiles);
+    const directory = path.resolve(opts.directory);
+    try {
+      filesToScan.push(
+        ...findMarkdownFiles(directory, { include: opts.include, exclude: opts.exclude }).filter(
+          (candidate) => candidate !== filePath,
+        ),
+      );
+    } catch (error) {
+      process.stderr.write(`Error: ${(error as Error).message}\n`);
+      terminate(1);
     }
   }
 
-  // Find all anchor references to update
   const updates: AnchorUpdate[] = [];
-  const fileContents = new Map<string, string>();
-  const fileName = path.basename(filePath);
+  const editsByFile = new Map<string, Edit[]>();
+  const contents = new Map<string, string>();
+  editsByFile.set(filePath, [headingEdit]);
 
   for (const scanFile of filesToScan) {
     const scanContent = scanFile === filePath ? content : fs.readFileSync(scanFile, "utf-8");
-    fileContents.set(scanFile, scanContent);
-    const scanTree = scanFile === filePath ? tree : parseMarkdown(scanContent);
-    const links = extractLinks(scanTree);
-
+    contents.set(scanFile, scanContent);
+    const links = extractLinks(
+      scanFile === filePath ? tree : parseMarkdown(scanContent),
+      scanContent,
+    );
+    const seenDestinations = new Set<string>();
     for (const link of links) {
-      const target = link.target;
-      if (scanFile === filePath && target === `#${oldSlug}`) {
-        updates.push({
-          file: scanFile,
-          line: link.line,
-          oldRef: `#${oldSlug}`,
-          newRef: `#${newSlug}`,
-        });
-      } else if (scanFile !== filePath) {
-        // Check for cross-file references: file.md#slug or relative/path/to/file.md#slug
-        const relPath = path.relative(path.dirname(scanFile), filePath);
-        if (target === `${fileName}#${oldSlug}` || target === `${relPath}#${oldSlug}`) {
-          const newTarget = target.replace(`#${oldSlug}`, `#${newSlug}`);
-          updates.push({ file: scanFile, line: link.line, oldRef: target, newRef: newTarget });
-        }
+      if (link.isExternal) continue;
+      const target = splitLocalTarget(link.target);
+      if (!target.fragment) continue;
+      const targetPath = target.path
+        ? resolveLocalPath(scanFile, target.path, runtime().config.root)
+        : scanFile;
+      if (targetPath !== filePath) continue;
+      const replacementSlug = slugChanges.get(target.fragment);
+      if (!replacementSlug) continue;
+      if (
+        scanFile === filePath &&
+        link.destinationStart !== undefined &&
+        link.destinationStart >= headingEdit.start &&
+        link.destinationStart < headingEdit.end
+      ) {
+        continue;
+      }
+      const newTarget = replaceFragment(link.target, replacementSlug);
+      const key = `${link.destinationStart ?? link.destinationLine}:${newTarget}`;
+      if (seenDestinations.has(key)) continue;
+      seenDestinations.add(key);
+      updates.push({
+        file: scanFile,
+        line: link.destinationLine,
+        oldRef: link.target,
+        newRef: newTarget,
+      });
+      if (link.destinationStart !== undefined && link.destinationEnd !== undefined) {
+        const edits = editsByFile.get(scanFile) ?? [];
+        edits.push({ start: link.destinationStart, end: link.destinationEnd, value: newTarget });
+        editsByFile.set(scanFile, edits);
       }
     }
   }
 
-  // Format output
   if (format === "json") {
     process.stdout.write(
       JSON.stringify(
         {
-          file: filePath,
+          file: outputPath(filePath, opts),
           heading: {
             line: matched.line,
             oldText: matched.text,
             newText: newHeading,
-            oldSlug,
+            oldSlug: matched.slug,
             newSlug,
           },
-          updates,
+          updates: updates.map((update) => ({
+            ...update,
+            file: outputPath(update.file, opts),
+          })),
           dryRun: opts.dryRun,
         },
         null,
         2,
       ) + "\n",
     );
-    if (opts.dryRun) return;
-  }
-
-  if (format !== "json") {
+  } else {
     const isHuman = format === "human";
-    const bold = (s: string) => (isHuman ? `\x1b[1m${s}\x1b[0m` : s);
-    const cyan = (s: string) => (isHuman ? `\x1b[36m${s}\x1b[0m` : s);
-
-    const lines: string[] = [];
+    const bold = (value: string) => (isHuman ? `\x1b[1m${value}\x1b[0m` : value);
+    const cyan = (value: string) => (isHuman ? `\x1b[36m${value}\x1b[0m` : value);
     const prefix = "#".repeat(matched.depth);
-    lines.push(bold(`Rename heading in ${filePath}:`));
-    lines.push(`  L${matched.line}  "${prefix} ${matched.text}" → "${prefix} ${newHeading}"`);
-
+    const lines = [
+      bold(`Rename heading in ${outputPath(filePath, opts)}:`),
+      `  L${matched.line}  "${prefix} ${matched.text}" → "${prefix} ${newHeading}"`,
+    ];
     if (updates.length > 0) {
-      lines.push("");
-      lines.push(bold("Anchor updates:"));
-      for (const u of updates) {
-        lines.push(`  ${cyan(`${u.file}:L${u.line}`)}       ${u.oldRef} → ${u.newRef}`);
+      lines.push("", bold("Anchor updates:"));
+      for (const update of updates) {
+        lines.push(
+          `  ${cyan(`${outputPath(update.file, opts)}:L${update.line}`)}       ${update.oldRef} → ${update.newRef}`,
+        );
       }
     }
-
-    lines.push("");
     lines.push(
-      `${updates.length} reference(s) updated across ${new Set(updates.map((u) => u.file)).size} file(s).`,
+      "",
+      `${updates.length} reference(s) updated across ${new Set(updates.map((update) => update.file)).size} file(s).`,
     );
     if (opts.dryRun) lines.push("(dry run — no files modified)");
-
     process.stdout.write(lines.join("\n") + "\n");
   }
 
   if (opts.dryRun) return;
-
-  // Apply changes
-  // First, update the heading line in the target file
-  const targetLines = (fileContents.get(filePath) ?? content).split("\n");
-  const headingLine = targetLines[matched.line - 1];
-  targetLines[matched.line - 1] = headingLine.replace(/^(#{1,6}\s+)(.*)$/, `$1${newHeading}`);
-
-  // Apply anchor replacements in the target file
-  const targetFileUpdates = updates.filter((u) => u.file === filePath);
-  for (const u of targetFileUpdates) {
-    const lineIdx = u.line - 1;
-    targetLines[lineIdx] = targetLines[lineIdx].replace(
-      new RegExp(escapeRegex(u.oldRef), "g"),
-      u.newRef,
-    );
-  }
-  fs.writeFileSync(filePath, targetLines.join("\n"), "utf-8");
-
-  // Apply anchor replacements in other files
-  const otherFiles = new Set(updates.filter((u) => u.file !== filePath).map((u) => u.file));
-  for (const otherFile of otherFiles) {
-    const otherContent = fileContents.get(otherFile) ?? fs.readFileSync(otherFile, "utf-8");
-    const otherLines = otherContent.split("\n");
-    const fileUpdates = updates.filter((u) => u.file === otherFile);
-    for (const u of fileUpdates) {
-      const lineIdx = u.line - 1;
-      otherLines[lineIdx] = otherLines[lineIdx].replace(
-        new RegExp(escapeRegex(u.oldRef), "g"),
-        u.newRef,
-      );
-    }
-    fs.writeFileSync(otherFile, otherLines.join("\n"), "utf-8");
+  for (const [changedFile, edits] of editsByFile) {
+    const original = contents.get(changedFile) ?? content;
+    fs.writeFileSync(changedFile, applyEdits(original, edits), "utf-8");
+    runtime().workspace.invalidate(changedFile);
   }
 }

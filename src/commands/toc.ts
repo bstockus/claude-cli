@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractHeadings } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireFile } from "../input.js";
 
 interface TocOptions {
   format: string;
@@ -18,18 +17,14 @@ function resolveFormat(opts: TocOptions): OutputFormat {
 
 export async function tocAction(file: string, opts: TocOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
   const maxDepth = Math.min(6, Math.max(1, parseInt(opts.maxDepth, 10) || 6));
   const minDepth = Math.min(6, Math.max(1, parseInt(opts.minDepth, 10) || 1));
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  const headings = extractHeadings(tree).filter((h) => h.depth >= minDepth && h.depth <= maxDepth);
+  const headings = runtime()
+    .workspace.document(filePath)
+    .headings.filter((heading) => heading.depth >= minDepth && heading.depth <= maxDepth);
 
   if (format === "json") {
     process.stdout.write(
@@ -44,9 +39,9 @@ export async function tocAction(file: string, opts: TocOptions): Promise<void> {
 
   if (headings.length === 0) {
     if (format === "human") {
-      process.stdout.write(`\x1b[33mNo headings found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[33mNo headings found in ${shownPath}\x1b[0m\n`);
     } else {
-      process.stdout.write(`No headings found in ${filePath}\n`);
+      process.stdout.write(`No headings found in ${shownPath}\n`);
     }
     return;
   }

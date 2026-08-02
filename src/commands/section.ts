@@ -1,7 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractHeadings, slugify } from "../markdown-ast.js";
+import { slugify } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface SectionOptions {
   format: string;
@@ -22,16 +23,11 @@ export async function sectionAction(
   opts: SectionOptions,
 ): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  const headings = extractHeadings(tree);
+  const document = runtime().workspace.document(filePath);
+  const { content, headings } = document;
 
   const headingLower = heading.toLowerCase();
   const headingSlug = slugify(heading);
@@ -41,7 +37,7 @@ export async function sectionAction(
 
   if (matchIdx === -1) {
     process.stderr.write(`Error: Heading not found: ${heading}\n`);
-    process.exit(1);
+    terminate(1);
   }
 
   const matched = headings[matchIdx];
@@ -75,7 +71,7 @@ export async function sectionAction(
     process.stdout.write(
       JSON.stringify(
         {
-          file: filePath,
+          file: shownPath,
           heading: matched.text,
           slug: matched.slug,
           depth: matched.depth,
@@ -94,7 +90,7 @@ export async function sectionAction(
   const bold = (s: string) => (isHuman ? `\x1b[1m${s}\x1b[0m` : s);
 
   process.stdout.write(
-    bold(`Section "${matched.text}" (L${startLine}-L${endLine}) in ${filePath}:`) +
+    bold(`Section "${matched.text}" (L${startLine}-L${endLine}) in ${shownPath}:`) +
       "\n\n" +
       sectionContent +
       "\n",

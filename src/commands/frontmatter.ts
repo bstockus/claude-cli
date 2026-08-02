@@ -1,8 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parseMarkdownWithFrontmatter } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface FrontmatterOptions {
   format: string;
@@ -57,14 +58,10 @@ function formatYamlLike(data: unknown, indent: number = 2): string {
 
 export async function frontmatterAction(file: string, opts: FrontmatterOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
+  const content = runtime().workspace.document(filePath).content;
   const tree = parseMarkdownWithFrontmatter(content);
 
   // Find yaml node at the start of the file
@@ -75,12 +72,12 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
   if (!yamlNode) {
     if (opts.key) {
       process.stderr.write(`Error: Key not found: ${opts.key} (no frontmatter in file)\n`);
-      process.exit(1);
+      terminate(1);
     }
     if (format === "json") {
       process.stdout.write("null\n");
     } else {
-      process.stdout.write(`No frontmatter in ${filePath}\n`);
+      process.stdout.write(`No frontmatter in ${shownPath}\n`);
     }
     return;
   }
@@ -92,7 +89,7 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
     const value = getNestedValue(data, opts.key);
     if (value === undefined) {
       process.stderr.write(`Error: Key not found: ${opts.key}\n`);
-      process.exit(1);
+      terminate(1);
     }
     if (format === "json") {
       process.stdout.write(JSON.stringify(value, null, 2) + "\n");
@@ -110,5 +107,5 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
   const isHuman = format === "human";
   const bold = (s: string) => (isHuman ? `\x1b[1m${s}\x1b[0m` : s);
 
-  process.stdout.write(bold(`Frontmatter in ${filePath}:`) + "\n" + formatYamlLike(data) + "\n");
+  process.stdout.write(bold(`Frontmatter in ${shownPath}:`) + "\n" + formatYamlLike(data) + "\n");
 }

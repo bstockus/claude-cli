@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractCodeBlocks } from "../markdown-ast.js";
+import { extractCodeBlocks } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireFile } from "../input.js";
 
 interface CodeBlocksOptions {
   format: string;
@@ -17,16 +17,10 @@ function resolveFormat(opts: CodeBlocksOptions): OutputFormat {
 
 export async function codeBlocksAction(file: string, opts: CodeBlocksOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  let blocks = extractCodeBlocks(tree);
+  let blocks = extractCodeBlocks(runtime().workspace.document(filePath).tree);
 
   if (opts.lang) {
     blocks = blocks.filter((b) => b.lang === opts.lang);
@@ -46,9 +40,9 @@ export async function codeBlocksAction(file: string, opts: CodeBlocksOptions): P
 
   if (blocks.length === 0) {
     if (format === "human") {
-      process.stdout.write(`\x1b[33mNo code blocks found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[33mNo code blocks found in ${shownPath}\x1b[0m\n`);
     } else {
-      process.stdout.write(`No code blocks found in ${filePath}\n`);
+      process.stdout.write(`No code blocks found in ${shownPath}\n`);
     }
     return;
   }
@@ -57,9 +51,9 @@ export async function codeBlocksAction(file: string, opts: CodeBlocksOptions): P
   const isHuman = format === "human";
 
   if (isHuman) {
-    lines.push(`\n\x1b[1m${blocks.length} code block(s) in ${filePath}\x1b[0m\n`);
+    lines.push(`\n\x1b[1m${blocks.length} code block(s) in ${shownPath}\x1b[0m\n`);
   } else {
-    lines.push(`${blocks.length} code block(s) in ${filePath}:`);
+    lines.push(`${blocks.length} code block(s) in ${shownPath}:`);
   }
 
   for (const b of blocks) {

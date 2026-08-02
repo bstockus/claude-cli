@@ -1,9 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { visit } from "unist-util-visit";
 import type { Heading, Code, List } from "mdast";
-import { parseMarkdown, extractText, type Root } from "../markdown-ast.js";
+import { extractText, type Root } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireFile } from "../input.js";
 
 interface StructureOptions {
   format: string;
@@ -108,15 +108,10 @@ function collectStructure(tree: Root, content: string): StructureEntry[] {
 
 export async function structureAction(file: string, opts: StructureOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
+  const { content, tree } = runtime().workspace.document(filePath);
   const entries = collectStructure(tree, content);
 
   if (format === "json") {
@@ -126,9 +121,9 @@ export async function structureAction(file: string, opts: StructureOptions): Pro
 
   if (entries.length === 0) {
     if (format === "human") {
-      process.stdout.write(`\x1b[33mNo structure found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[33mNo structure found in ${shownPath}\x1b[0m\n`);
     } else {
-      process.stdout.write(`No structure found in ${filePath}\n`);
+      process.stdout.write(`No structure found in ${shownPath}\n`);
     }
     return;
   }

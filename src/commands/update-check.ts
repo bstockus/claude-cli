@@ -101,7 +101,7 @@ export async function checkUpdateAction(
   const now = deps.now ?? Date.now;
   const stdout = deps.stdout ?? ((t: string) => void process.stdout.write(t));
   const stderr = deps.stderr ?? ((t: string) => void process.stderr.write(t));
-  const exit = deps.exit ?? ((c: number) => process.exit(c));
+  const exit = deps.exit ?? ((c: number) => void (process.exitCode = c));
 
   const format = resolveFormat(opts);
   const latest = await fetchLatest(packageName);
