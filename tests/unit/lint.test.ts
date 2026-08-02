@@ -15,6 +15,8 @@ beforeAll(() => {
   fs.writeFileSync(path.join(tmpDir, "not-md.txt"), "not markdown");
   fs.mkdirSync(path.join(tmpDir, "node_modules"));
   fs.writeFileSync(path.join(tmpDir, "node_modules", "skip.md"), "# Should be skipped\n");
+  fs.mkdirSync(path.join(tmpDir, ".git"));
+  fs.writeFileSync(path.join(tmpDir, ".git", "git-skip.md"), "# Should be skipped\n");
 });
 
 afterAll(() => {
@@ -51,6 +53,12 @@ describe("findMarkdownFiles", () => {
     const files = findMarkdownFiles(tmpDir);
     const names = files.map((f) => path.basename(f));
     expect(names).not.toContain("skip.md");
+  });
+
+  it("excludes .git", () => {
+    const files = findMarkdownFiles(tmpDir);
+    const names = files.map((f) => path.basename(f));
+    expect(names).not.toContain("git-skip.md");
   });
 
   it("returns sorted results", () => {

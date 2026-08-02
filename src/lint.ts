@@ -24,12 +24,16 @@ export async function lintFile(filePath: string, options: LintFileOptions = {}):
   return issues;
 }
 
+// Directories that never hold authored markdown but can be very large. Walking
+// .git in particular costs a lot of I/O on any real repository.
+const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
+
 export function findMarkdownFiles(dir: string): string[] {
   const results: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory() && entry.name !== "node_modules") {
+    if (entry.isDirectory() && !SKIPPED_DIRS.has(entry.name)) {
       results.push(...findMarkdownFiles(fullPath));
     } else if (entry.isFile() && entry.name.endsWith(".md")) {
       results.push(fullPath);
