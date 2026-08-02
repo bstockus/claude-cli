@@ -36,6 +36,11 @@ e2e coverage in `tests/e2e/cli.test.ts`.
   guards this.
 - **Never hand-edit `version` in `package.json` or `CHANGELOG.md`.** semantic-release owns
   both. `src/cli.ts` reads the version at runtime rather than inlining it.
+- **ESLint uses the non-type-checked preset on purpose.** `tsc --strict` (`npm run typecheck`)
+  is the type authority. typescript-eslint's `recommendedTypeChecked` flags ~26 long-standing
+  intentional patterns here — uniformly-`async` commander handlers, `as unknown as` casts
+  around jsdom globals, and `any` at the `JSON.parse`/YAML boundary. Adopting it means
+  fixing those first, not just flipping the preset.
 
 ## Commits
 
