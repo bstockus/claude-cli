@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { lintAction } from "./commands/lint.js";
 import { lintDirAction } from "./commands/lint-dir.js";
@@ -20,11 +21,16 @@ import { tablesAction } from "./commands/tables.js";
 import { checkUrlsAction } from "./commands/check-urls.js";
 import { orphansAction } from "./commands/orphans.js";
 import { renameHeadingAction } from "./commands/rename-heading.js";
+import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
+import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
 
 // Read the version at runtime rather than inlining it: semantic-release rewrites
 // package.json at release time, so a literal here would always be stale.
 // From dist/cli.js, "../package.json" is the package root — always present in the tarball.
-const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+const { version, name: packageName } = createRequire(import.meta.url)("../package.json") as {
+  version: string;
+  name: string;
+};
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -34,10 +40,35 @@ const argv = process.argv.map((arg) => {
   return arg;
 });
 
+// Reads the cached result and may schedule a detached refresh. Never blocks and
+// never writes to a machine-readable stream — see src/update-notifier.ts.
+installUpdateNotifier({
+  currentVersion: version,
+  packageName,
+  argv,
+  entryPoint: fileURLToPath(import.meta.url),
+});
+
 const program = new Command()
   .name("claude-cli")
   .description("A generic CLI toolkit for working with markdown files and related assets")
   .version(version);
+
+program
+  .command(CHECK_COMMAND)
+  .description("Check whether a newer version of this CLI has been published")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .addHelpText(
+    "after",
+    "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json\n\nQueries the registry directly rather than using the 24h cache.\n\nExit codes:\n  0  Already on the latest version\n  1  Could not reach the registry\n  2  A newer version is available",
+  )
+  .action((opts: { format: string }) => checkUpdateAction(packageName, version, opts));
+
+// Internal: refreshes the cached latest version. Spawned detached by the notifier.
+program
+  .command(REFRESH_COMMAND, { hidden: true })
+  .description("Internal: refresh the cached latest-version check")
+  .action(() => refreshUpdateCacheAction(packageName));
 
 const md = program
   .command("md")

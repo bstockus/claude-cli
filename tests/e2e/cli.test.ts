@@ -38,6 +38,32 @@ describe("CLI e2e", () => {
     expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it("lists check-update in help but hides the internal refresh command", async () => {
+    const { stdout, exitCode } = await runCli("help");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("check-update");
+    expect(stdout).not.toContain("__refresh-update-cache");
+  });
+
+  it("documents check-update exit codes", async () => {
+    const { stdout, exitCode } = await runCli("check-update", "--help");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("newer version");
+    expect(stdout).toContain("--format");
+  });
+
+  // The notifier writes to stderr, which for `md lint` carries the issue payload
+  // (JSON included). A notice leaking into a non-interactive run would corrupt it.
+  it("never emits an update notice when stdio is not a TTY", async () => {
+    const { stderr, stdout } = await runCli(
+      "md",
+      "lint",
+      path.join(fixturesDir, "broken-katex.md"),
+    );
+    expect(stderr).not.toContain("Update available");
+    expect(stdout).not.toContain("Update available");
+  });
+
   it("shows md lint help with --help", async () => {
     const { stdout, exitCode } = await runCli("md", "lint", "--help");
     expect(exitCode).toBe(0);

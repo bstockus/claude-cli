@@ -36,6 +36,16 @@ e2e coverage in `tests/e2e/cli.test.ts`.
   guards this.
 - **Never hand-edit `version` in `package.json` or `CHANGELOG.md`.** semantic-release owns
   both. `src/cli.ts` reads the version at runtime rather than inlining it.
+- **The update notifier must never write to a machine-readable stream.** Both stdout and
+  stderr carry payloads depending on the command (`--format json` puts JSON on stderr for
+  `md lint`, stdout when clean), so `src/update-notifier.ts` refuses to print unless
+  stderr is a TTY, the format is not JSON, `CI` is unset, and the opt-out variable is
+  unset. Changing those gates risks corrupting a consumer's parse.
+- **The notice prints from cache in a `process.on("exit")` handler.** Commands call
+  `process.exit()` directly on their issue and error paths, so anything awaited after
+  `parse()` would be skipped. The network refresh happens in a detached child
+  (`__refresh-update-cache`) guarded by an atomic `wx` lock file, so concurrent
+  invocations spawn at most one.
 - **`engines` mirrors jsdom, and the CI matrix must stay inside it.** jsdom is the
   most constrained dependency (`^22.22.2 || ^24.15.0 || >=26.0.0`); commander, katex
   and markdownlint all require `>=22`. v1.0.2 shipped claiming `>=20` and crashed on

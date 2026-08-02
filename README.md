@@ -75,6 +75,47 @@ Commits **must** follow [Conventional Commits](https://www.conventionalcommits.o
 | `feat!:` or `BREAKING CHANGE:`   | major release |
 | `chore:` `docs:` `test:` `ci:` … | no release    |
 
+## Update checks
+
+The CLI checks whether a newer version has been published and prints a notice:
+
+```text
+Update available 1.0.3 → 1.1.0
+Run npm install -g @bstockus/claude-cli to update.
+```
+
+The check runs **at most once every 24 hours**, in a detached background process, so it
+never delays a command. The notice itself is printed from the cached result, which means
+it appears at most 24 hours after a release.
+
+It is deliberately silent unless it is safe and useful to speak. No notice is printed when:
+
+- stderr is not a TTY — output is being piped or parsed
+- `--format json` is in use, on any command
+- `CI` is set
+- `CLAUDE_CLI_NO_UPDATE_NOTIFIER=1` is set
+
+Set `CLAUDE_CLI_NO_UPDATE_NOTIFIER=1` to disable the feature entirely, including the
+background refresh.
+
+The cached result lives at `${XDG_CACHE_HOME:-~/.cache}/claude-cli/update-check.json` and
+can be deleted at any time to force a fresh check.
+
+### `check-update`
+
+Checks immediately, querying the registry directly rather than reading the 24h cache.
+
+```bash
+claude-cli check-update
+claude-cli check-update --format json
+```
+
+Exit codes:
+
+- `0` - Already on the latest version
+- `1` - Could not reach the registry
+- `2` - A newer version is available
+
 ## Common Options
 
 All `md` subcommands support:
