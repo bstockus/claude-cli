@@ -9,6 +9,7 @@ import {
   extractTables,
   isLineInCodeBlock,
   slugify,
+  extractText,
 } from "../../src/markdown-ast.js";
 
 describe("parseMarkdown", () => {
@@ -38,6 +39,13 @@ describe("slugify", () => {
 
   it("handles empty string", () => {
     expect(slugify("")).toBe("");
+  });
+});
+
+describe("extractText", () => {
+  it("includes inline code in rendered text", () => {
+    const tree = parseMarkdown("### The `Foo` trait");
+    expect(extractText(tree.children[0])).toBe("The Foo trait");
   });
 });
 
@@ -171,6 +179,14 @@ describe("extractHeadings", () => {
   it("assigns GitHub suffixes to duplicate headings", () => {
     const headings = extractHeadings(parseMarkdown("# Same\n\n## Same\n\n## Same"));
     expect(headings.map((heading) => heading.slug)).toEqual(["same", "same-1", "same-2"]);
+  });
+
+  it("includes inline code in heading text and GitHub slugs", () => {
+    const headings = extractHeadings(parseMarkdown("### The `*PRTF` render seam"));
+    expect(headings[0]).toMatchObject({
+      text: "The *PRTF render seam",
+      slug: "the-prtf-render-seam",
+    });
   });
 });
 
