@@ -9,4 +9,11 @@
  */
 export default {
   extends: ["@commitlint/config-conventional"],
+  rules: {
+    // semantic-release generates the release commit body from the changelog, which
+    // contains long commit URLs that cannot be wrapped. The default 100-char cap
+    // rejects them. Same reasoning for footers (BREAKING CHANGE notes, links).
+    "body-max-line-length": [0],
+    "footer-max-line-length": [0],
+  },
 };

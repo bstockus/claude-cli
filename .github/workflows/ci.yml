@@ -12,6 +12,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Git hooks serve no purpose in CI; the commitlint job checks messages explicitly.
+  HUSKY: 0
+
 jobs:
   quality:
     name: Lint, format, typecheck

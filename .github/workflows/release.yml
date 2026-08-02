@@ -16,6 +16,12 @@ permissions:
   packages: write # publish to npm.pkg.github.com
   id-token: write
 
+env:
+  # `npm ci` runs `prepare: husky`, which would install the commit-msg hook into the
+  # runner's checkout — and that hook would then reject semantic-release's own
+  # release commit. Git hooks have no purpose in CI.
+  HUSKY: 0
+
 jobs:
   release:
     name: Publish to GitHub Packages
