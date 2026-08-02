@@ -52,7 +52,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "jsdom": "^26.0.0",
     "katex": "^0.16.0",
     "markdownlint": "^0.37.0",
