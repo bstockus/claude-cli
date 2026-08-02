@@ -158,6 +158,24 @@ checks:
   katex: true
   references: true
   markdownlint: false
+  graph: true
+  frontmatter: true
+  toc: true
+  external: false
+
+frontmatter:
+  schema: schemas/document.yml
+  rules:
+    required: [title, metadata.owner]
+    prohibited: [draftPassword]
+    types: { title: string }
+    allowedValues: { status: [draft, published] }
+    formats: { publishedAt: date-time }
+    patterns: { slug: "^[a-z0-9-]+$" }
+    unique: [id, slug]
+
+toc:
+  files: ["README.md", "guides/**/*.md"]
 
 markdownlint:
   config: .markdownlintrc
@@ -173,6 +191,10 @@ commands:
   toc:
     minDepth: 2
     maxDepth: 4
+  graph:
+    entry: [docs/README.md]
+  audit:
+    summary: true
 ```
 
 `commands` uses the CLI command names and camel-case option names. It accepts defaults for
@@ -246,6 +268,33 @@ Options:
 
 Falls back to GET on 405 Method Not Allowed. Respects 429 rate limiting with Retry-After.
 
+#### `md validate-frontmatter <path>`
+
+Validate one Markdown file or all selected files in a directory. A local JSON or YAML
+Schema can be supplied with `--schema`; configured schema and shortcut rules are applied
+cumulatively. Repeated `--include` and `--exclude` options override workspace selection.
+
+```bash
+claude-cli md validate-frontmatter docs --schema schemas/document.yml
+```
+
+#### `md audit [directory]`
+
+Run configured lint, reference, graph, frontmatter, and generated-TOC checks as one bounded
+workspace operation. Graph checking is on by default. Frontmatter and TOC checks run when
+configured; external URLs stay offline unless enabled explicitly.
+
+```bash
+claude-cli md audit
+claude-cli md audit docs --summary --external
+claude-cli md audit docs --no-frontmatter --no-toc
+```
+
+Use `--[no-]frontmatter`, `--[no-]graph`, and `--[no-]toc` to select workspace checks.
+Lint selection, concurrency, include/exclude, graph entry, and URL timeout/retry options
+are also available. JSON output is one object containing enabled and skipped checks,
+totals, normalized findings, and graph metrics.
+
 ### References
 
 #### `md refs <file>`
@@ -309,6 +358,23 @@ Options:
 - `--entry <file>` - Entry-point file not considered orphan (repeatable)
 - `--include <glob>` / `--exclude <glob>` - Override workspace selection (repeatable)
 
+#### `md graph [directory]`
+
+Build the selected Markdown document graph. The report includes inbound/outbound reference
+counts, broken Markdown targets, dead ends, weak components, strongly connected cycles, and
+reachability from `--entry` or configured entry points. Without an applicable entry point,
+reachability is reported as unevaluated.
+
+```bash
+claude-cli md graph docs --entry docs/README.md
+claude-cli md graph docs --output mermaid
+claude-cli md graph docs --output dot
+```
+
+`report` (the default) follows `--format`; Mermaid and DOT are deterministic raw stdout
+payloads. Broken targets and unreachable documents exit `2`; informational graph metrics
+do not.
+
 ### Document Analysis
 
 #### `md headers <file>`
@@ -343,6 +409,9 @@ Generate a markdown-formatted table of contents from headings.
 ```bash
 claude-cli md toc path/to/file.md
 claude-cli md toc --min-depth 2 --ordered path/to/file.md
+claude-cli md toc path/to/file.md --check
+claude-cli md toc path/to/file.md --dry-run
+claude-cli md toc path/to/file.md --write
 ```
 
 Options:
@@ -350,6 +419,19 @@ Options:
 - `--max-depth <n>` - Maximum heading depth (1-6, default: 6)
 - `--min-depth <n>` - Minimum heading depth (1-6, default: 1)
 - `--ordered` - Use numbered lists instead of bullets
+- `--check` - Exit `2` when the marker block is missing or stale
+- `--dry-run` - Print the proposed marker block without writing
+- `--write` - Replace only the marker interior
+
+Synchronization uses exactly one ordered marker pair:
+
+```markdown
+<!-- claude-cli:toc:start -->
+<!-- claude-cli:toc:end -->
+```
+
+The three synchronization modes are mutually exclusive. Writes preserve surrounding text
+and the file's line-ending style, and current files are not rewritten.
 
 #### `md stats <file>`
 

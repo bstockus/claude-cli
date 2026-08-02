@@ -83,6 +83,8 @@ bounded concurrency where it is safe.
 
 ### 1. Workspace audit
 
+Status: implemented by `md audit`.
+
 Add `md audit <directory>` as the primary CI-oriented command. It should combine selected
 workspace checks into one run:
 
@@ -97,6 +99,9 @@ contract: `0` for success, `1` for usage or operational failure, and `2` for act
 findings.
 
 ### 2. Document graph and reachability
+
+Status: implemented by `md graph`; `md orphans` reuses the shared graph model while
+retaining its lightweight indegree contract.
 
 Add `md graph <directory>` to build a workspace link graph. Useful outputs include JSON,
 Mermaid, and DOT. Analysis should include:
@@ -116,6 +121,9 @@ a compatibility alias for a specific graph query.
 
 ### 3. Frontmatter schema validation
 
+Status: implemented by `md validate-frontmatter` with JSON Schema 2020-12 and shortcut
+rules.
+
 Extend frontmatter support beyond extraction with a command such as
 `md validate-frontmatter <path>`. It should validate individual files or directories for:
 
@@ -129,6 +137,8 @@ JSON Schema is a good generic foundation, with concise configuration shortcuts f
 rules if needed.
 
 ### 4. TOC checking and synchronization
+
+Status: implemented by marker-based `md toc --check`, `--dry-run`, and `--write` modes.
 
 Extend `md toc` with marker-based maintenance:
 

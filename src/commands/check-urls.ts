@@ -12,12 +12,18 @@ interface CheckUrlsOptions {
   includeOk: boolean;
 }
 
-interface UrlResult {
+export interface UrlResult {
   line: number;
   url: string;
   status: number | null;
   ok: boolean;
   error?: string;
+}
+
+export interface UrlOccurrence {
+  file: string;
+  line: number;
+  url: string;
 }
 
 function resolveFormat(opts: CheckUrlsOptions): OutputFormat {
@@ -85,6 +91,21 @@ async function runWithConcurrency<T>(
     if (executing.size >= limit) await Promise.race(executing);
   }
   await Promise.all(executing);
+}
+
+export async function checkUrlOccurrences(
+  occurrences: UrlOccurrence[],
+  options: { timeout: number; concurrency: number; retries: number },
+): Promise<Array<UrlOccurrence & { status: number | null; ok: boolean; error?: string }>> {
+  const unique = [...new Set(occurrences.map((item) => item.url))];
+  const checked = new Map<string, { status: number | null; ok: boolean; error?: string }>();
+  await runWithConcurrency(unique, options.concurrency, async (url) => {
+    checked.set(
+      url,
+      await checkUrl(url, options.timeout, options.retries, runtime().config.urls.allowedStatuses),
+    );
+  });
+  return occurrences.map((occurrence) => ({ ...occurrence, ...checked.get(occurrence.url)! }));
 }
 
 export async function checkUrlsAction(file: string, opts: CheckUrlsOptions): Promise<void> {

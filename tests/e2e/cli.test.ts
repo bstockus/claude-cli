@@ -1038,4 +1038,86 @@ describe("CLI e2e", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("graphs reachability and emits deterministic raw graph output", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "graph-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "entry.md"), "[Child](child.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "child.md"), "# Child\n");
+      fs.writeFileSync(path.join(tmpDir, "lost.md"), "# Lost\n");
+      const report = await runCli(
+        "md",
+        "graph",
+        tmpDir,
+        "--entry",
+        path.join(tmpDir, "entry.md"),
+        "-fj",
+      );
+      expect(report.exitCode).toBe(2);
+      expect(JSON.parse(report.stderr).unreachable).toContain(path.join(tmpDir, "lost.md"));
+      const raw = await runCli("md", "graph", tmpDir, "--output", "dot");
+      expect(raw.stdout).toMatch(/^digraph markdown \{/);
+      expect(raw.stderr).toBe("");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("validates configured frontmatter schema and shortcut rules", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "frontmatter-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "schema.yml"), "type: object\nrequired: [title]\n");
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        "version: 1\nfrontmatter:\n  schema: schema.yml\n  rules:\n    formats: {date: date}\n",
+      );
+      fs.writeFileSync(path.join(tmpDir, "doc.md"), "---\ntitle: Doc\ndate: invalid\n---\n");
+      const result = await runCliIn(tmpDir, "md", "validate-frontmatter", "doc.md", "-fj");
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr)[0].checker).toBe("frontmatter/format");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("checks, previews, and writes only a marker-based TOC", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "toc-sync-e2e-"));
+    const file = path.join(tmpDir, "doc.md");
+    try {
+      fs.writeFileSync(
+        file,
+        "# Doc\n\nbefore\n<!-- claude-cli:toc:start -->\nold\n<!-- claude-cli:toc:end -->\nafter\n",
+      );
+      expect((await runCli("md", "toc", file, "--check")).exitCode).toBe(2);
+      const preview = await runCli("md", "toc", file, "--dry-run");
+      expect(preview.stdout).toContain("- [Doc](#doc)");
+      expect(fs.readFileSync(file, "utf-8")).toContain("\nold\n");
+      expect((await runCli("md", "toc", file, "--write")).exitCode).toBe(0);
+      expect((await runCli("md", "toc", file, "--check")).exitCode).toBe(0);
+      expect(fs.readFileSync(file, "utf-8")).toContain(
+        "before\n<!-- claude-cli:toc:start -->\n- [Doc](#doc)\n<!-- claude-cli:toc:end -->\nafter",
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("aggregates configured checks in an audit summary", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audit-e2e-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        'version: 1\ntoc:\n  files: ["README.md"]\nchecks:\n  mermaid: false\n  katex: false\n  references: false\n',
+      );
+      fs.writeFileSync(
+        path.join(tmpDir, "README.md"),
+        "# Readme\n\n<!-- claude-cli:toc:start -->\nold\n<!-- claude-cli:toc:end -->\n",
+      );
+      const result = await runCliIn(tmpDir, "md", "audit", "--summary");
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain("toc: 1");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

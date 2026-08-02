@@ -1,10 +1,10 @@
 import path from "node:path";
 import { findMarkdownFiles } from "../lint.js";
 import type { OutputFormat } from "../types.js";
-import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireDirectory } from "../input.js";
+import { buildWorkspaceGraph } from "../graph.js";
 
 interface OrphansOptions {
   format: string;
@@ -46,22 +46,12 @@ export async function orphansAction(directory: string, opts: OrphansOptions): Pr
     });
   }
 
-  // Build set of all referenced files
-  const referencedFiles = new Set<string>();
-  for (const file of files) {
-    const refs = runtime().workspace.document(file).references;
-    for (const ref of refs) {
-      if (ref.isExternal || ref.isAnchorOnly) continue;
-      const targetFile = splitLocalTarget(ref.target).path;
-      if (targetFile) {
-        const resolved = resolveLocalPath(file, targetFile, runtime().config.root);
-        referencedFiles.add(resolved);
-      }
-    }
-  }
-
   // Resolve entry files
   const entryFiles = new Set(opts.entry.map((e) => path.resolve(dirPath, e)));
+  const graph = buildWorkspaceGraph(runtime().workspace, files);
+  const referencedFiles = new Set(
+    graph.nodes.filter((node) => node.inbound > 0).map((node) => node.file),
+  );
 
   // Find orphans
   const orphans = files.filter((f) => !referencedFiles.has(f) && !entryFiles.has(f));
