@@ -68,10 +68,6 @@ Release, and publishes to GitHub Packages. Nothing is versioned by hand — `ver
 Commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/); a
 `commit-msg` hook and a CI job both enforce it.
 
-Only the three most recent versions are retained in the registry; a weekly job deletes
-older ones. Git tags, GitHub Releases and `CHANGELOG.md` are never touched, so the history
-of what shipped stays complete.
-
 | Commit prefix                    | Effect        |
 | -------------------------------- | ------------- |
 | `fix:` / `perf:`                 | patch release |

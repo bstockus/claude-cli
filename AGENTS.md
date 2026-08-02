@@ -54,13 +54,16 @@ e2e coverage in `tests/e2e/cli.test.ts`.
 - **Release is gated on the CI workflow, not on push.** `release.yml` triggers via
   `workflow_run` after CI succeeds, so a red matrix cannot publish. It deliberately
   does not re-run the tests.
-- **Package retention is enforced weekly and is irreversible.**
-  `.github/workflows/prune-packages.yml` keeps only the newest 3 versions on GitHub
-  Packages. It needs a `PACKAGES_TOKEN` secret (a PAT with `read:packages` +
-  `delete:packages`) because the package is owned by a _user_: deletion goes through
-  `/user/packages/...`, which acts on the authenticated user, and `GITHUB_TOKEN`
-  authenticates as `github-actions[bot]`. Manual runs default to a dry run; scheduled
-  runs delete. Selection never removes a version whose name is not valid semver.
+- **The package-retention job exists but is currently DISABLED.**
+  `.github/workflows/prune-packages.yml` would keep only the newest 3 versions on GitHub
+  Packages, but the workflow is in `disabled_manually` state, so nothing is pruned today.
+  Re-enable with `gh workflow enable "Prune package versions"`.
+  Two things to know before doing so: it deletes irreversibly, and it needs a
+  `PACKAGES_TOKEN` secret (a classic PAT with `read:packages` + `delete:packages`) because
+  the package is owned by a _user_ — deletion goes through `/user/packages/...`, which acts
+  on the authenticated user, while `GITHUB_TOKEN` authenticates as `github-actions[bot]`.
+  Manual runs default to a dry run; scheduled runs delete. Selection sorts by semver and
+  never removes a version whose name is not valid semver.
 - **ESLint uses the non-type-checked preset on purpose.** `tsc --strict` (`npm run typecheck`)
   is the type authority. typescript-eslint's `recommendedTypeChecked` flags ~26 long-standing
   intentional patterns here — uniformly-`async` commander handlers, `as unknown as` casts
