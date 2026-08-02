@@ -193,6 +193,21 @@ describe("CLI e2e", () => {
     }
   });
 
+  it("lint-dir accepts GitHub anchors for headings containing inline code", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "inline-code-anchor-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, "README.md"),
+        "# Index\n\n[Jump](#the-foo-trait)\n\n### The `Foo` trait\n",
+      );
+      const { exitCode, stdout } = await runCli("md", "lint-dir", tmpDir);
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("No issues found");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("exits 1 for unknown command", async () => {
     const { exitCode, stderr } = await runCli("unknown-cmd");
     expect(exitCode).toBe(1);
@@ -391,6 +406,19 @@ describe("CLI e2e", () => {
     expect(exitCode).toBe(0);
     expect(stdout).not.toContain("Valid All Features");
     expect(stdout).toContain("1. [Math](#math)");
+  });
+
+  it("toc includes inline code in heading labels and anchors", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "inline-code-toc-"));
+    try {
+      const file = path.join(tmpDir, "README.md");
+      fs.writeFileSync(file, "# The `Foo` trait\n");
+      const { exitCode, stdout } = await runCli("md", "toc", file);
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("- [The Foo trait](#the-foo-trait)");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   // md stats tests

@@ -14,6 +14,7 @@ import type {
   Definition,
   Code,
   Text,
+  InlineCode,
   ListItem,
   Table,
   TableRow,
@@ -70,8 +71,12 @@ export function slugify(text: string): string {
 
 export function extractText(node: Node): string {
   const parts: string[] = [];
-  visit(node, "text", (textNode: Text) => {
-    parts.push(textNode.value);
+  visit(node, (child: Node) => {
+    // Inline code is a literal: its content lives in `value`, not in text children.
+    // Include it so rendered labels and GitHub heading slugs retain backtick spans.
+    if (child.type === "text" || child.type === "inlineCode") {
+      parts.push((child as Text | InlineCode).value);
+    }
   });
   return parts.join("");
 }
