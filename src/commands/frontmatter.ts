@@ -1,5 +1,3 @@
-import { parse as parseYaml } from "yaml";
-import { parseMarkdownWithFrontmatter } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
@@ -61,15 +59,8 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
   const filePath = requireFile(file, opts);
   const shownPath = outputPath(filePath, opts);
 
-  const content = runtime().workspace.document(filePath).content;
-  const tree = parseMarkdownWithFrontmatter(content);
-
-  // Find yaml node at the start of the file
-  const yamlNode = tree.children.find(
-    (node) => node.type === "yaml" && node.position?.start.line === 1,
-  );
-
-  if (!yamlNode) {
+  const frontmatter = runtime().workspace.document(filePath).frontmatter;
+  if (frontmatter.status === "missing") {
     if (opts.key) {
       process.stderr.write(`Error: Key not found: ${opts.key} (no frontmatter in file)\n`);
       terminate(1);
@@ -82,8 +73,10 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
     return;
   }
 
-  const yamlContent = (yamlNode as unknown as { value: string }).value;
-  const data = parseYaml(yamlContent);
+  if (frontmatter.status === "malformed") {
+    throw new Error(`${shownPath}: ${frontmatter.message}`);
+  }
+  const data = frontmatter.data;
 
   if (opts.key) {
     const value = getNestedValue(data, opts.key);

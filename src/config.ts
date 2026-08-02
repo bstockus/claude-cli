@@ -11,6 +11,20 @@ export interface CheckConfig {
   katex: boolean;
   references: boolean;
   markdownlint: boolean;
+  frontmatter: boolean;
+  graph: boolean;
+  toc: boolean;
+  external: boolean;
+}
+
+export interface FrontmatterRulesConfig {
+  required: string[];
+  prohibited: string[];
+  types: Record<string, "string" | "number" | "integer" | "boolean" | "array" | "object" | "null">;
+  allowedValues: Record<string, unknown[]>;
+  formats: Record<string, string>;
+  patterns: Record<string, string>;
+  unique: string[];
 }
 
 export interface ResolvedConfig {
@@ -20,6 +34,8 @@ export interface ResolvedConfig {
   markdown: { renderer: "github" };
   output: { format: OutputFormat; paths: PathStyle };
   checks: CheckConfig;
+  frontmatter: { schema?: string; rules: FrontmatterRulesConfig };
+  toc: { files: string[] };
   markdownlint: { config?: string };
   urls: { ignore: string[]; allowedStatuses: number[] };
   commands: Record<string, Record<string, unknown>>;
@@ -43,7 +59,28 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
   "refs-to": new Set(["format", "paths", "include", "exclude"]),
   headers: new Set(["format", "paths", "maxDepth"]),
   outline: new Set(["format", "paths", "maxDepth"]),
-  toc: new Set(["format", "paths", "maxDepth", "minDepth", "ordered"]),
+  toc: new Set(["format", "paths", "maxDepth", "minDepth", "ordered", "check", "write", "dryRun"]),
+  graph: new Set(["format", "paths", "output", "entry", "include", "exclude"]),
+  "validate-frontmatter": new Set(["format", "paths", "schema", "include", "exclude"]),
+  audit: new Set([
+    "format",
+    "paths",
+    "summary",
+    "external",
+    "frontmatter",
+    "graph",
+    "toc",
+    "style",
+    "mermaid",
+    "katex",
+    "references",
+    "concurrency",
+    "include",
+    "exclude",
+    "entry",
+    "timeout",
+    "retry",
+  ]),
   stats: new Set(["format", "paths"]),
   "code-blocks": new Set(["format", "paths", "lang", "content"]),
   structure: new Set(["format", "paths"]),
@@ -67,6 +104,8 @@ const ROOT_KEYS = new Set([
   "markdownlint",
   "urls",
   "commands",
+  "frontmatter",
+  "toc",
 ]);
 
 function object(value: unknown, name: string): Record<string, unknown> {
@@ -115,6 +154,8 @@ const BOOLEAN_OPTIONS = new Set([
   "style",
   "summary",
   "external",
+  "check",
+  "write",
   "anchors",
   "images",
   "ordered",
@@ -128,6 +169,10 @@ const BOOLEAN_OPTIONS = new Set([
   "mermaid",
   "katex",
   "references",
+  "frontmatter",
+  "graph",
+  "toc",
+  "external",
 ]);
 
 function validateCommandOption(command: string, key: string, value: unknown): void {
@@ -164,10 +209,24 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
   if (key === "type" && !["internal", "external", "image", "anchor"].includes(String(value))) {
     throw new Error(`${name} must be internal, external, image, or anchor`);
   }
-  if (["lang", "key", "directory"].includes(key) && typeof value !== "string") {
+  if (["lang", "key", "directory", "schema", "output"].includes(key) && typeof value !== "string") {
     throw new Error(`${name} must be a string`);
   }
   if (["include", "exclude", "ignore", "entry"].includes(key)) strings(value, name, []);
+  if (key === "output" && !["report", "mermaid", "dot"].includes(String(value))) {
+    throw new Error(`${name} must be report, mermaid, or dot`);
+  }
+}
+
+function stringMap<T>(
+  value: unknown,
+  name: string,
+  validate: (item: unknown, itemName: string) => T,
+): Record<string, T> {
+  const source = object(value, name);
+  return Object.fromEntries(
+    Object.entries(source).map(([key, item]) => [key, validate(item, `${name}.${key}`)]),
+  );
 }
 
 export interface ConfigSelection {
@@ -237,7 +296,57 @@ export function loadConfig(
   }
 
   const checks = object(rootObject.checks, "checks");
-  knownKeys(checks, new Set(["mermaid", "katex", "references", "markdownlint"]), "checks");
+  knownKeys(
+    checks,
+    new Set([
+      "mermaid",
+      "katex",
+      "references",
+      "markdownlint",
+      "frontmatter",
+      "graph",
+      "toc",
+      "external",
+    ]),
+    "checks",
+  );
+  const frontmatter = object(rootObject.frontmatter, "frontmatter");
+  knownKeys(frontmatter, new Set(["schema", "rules"]), "frontmatter");
+  const rules = object(frontmatter.rules, "frontmatter.rules");
+  knownKeys(
+    rules,
+    new Set(["required", "prohibited", "types", "allowedValues", "formats", "patterns", "unique"]),
+    "frontmatter.rules",
+  );
+  const typeNames = new Set(["string", "number", "integer", "boolean", "array", "object", "null"]);
+  const types = stringMap(rules.types, "frontmatter.rules.types", (item, name) => {
+    if (typeof item !== "string" || !typeNames.has(item))
+      throw new Error(`${name} has an unsupported type`);
+    return item as FrontmatterRulesConfig["types"][string];
+  });
+  const allowedValues = stringMap(
+    rules.allowedValues,
+    "frontmatter.rules.allowedValues",
+    (item, name) => {
+      if (!Array.isArray(item)) throw new Error(`${name} must be a list`);
+      return [...item];
+    },
+  );
+  const formats = stringMap(rules.formats, "frontmatter.rules.formats", (item, name) => {
+    if (typeof item !== "string") throw new Error(`${name} must be a string`);
+    return item;
+  });
+  const patterns = stringMap(rules.patterns, "frontmatter.rules.patterns", (item, name) => {
+    if (typeof item !== "string") throw new Error(`${name} must be a string`);
+    try {
+      new RegExp(item);
+    } catch {
+      throw new Error(`${name} must be a valid regular expression`);
+    }
+    return item;
+  });
+  const toc = object(rootObject.toc, "toc");
+  knownKeys(toc, new Set(["files"]), "toc");
   const markdownlint = object(rootObject.markdownlint, "markdownlint");
   knownKeys(markdownlint, new Set(["config"]), "markdownlint");
   const urls = object(rootObject.urls, "urls");
@@ -264,6 +373,7 @@ export function loadConfig(
   const rootValue = optionalString(rootObject.root, "root") ?? ".";
   const root = path.resolve(base, rootValue);
   const markdownlintPath = optionalString(markdownlint.config, "markdownlint.config");
+  const frontmatterSchema = optionalString(frontmatter.schema, "frontmatter.schema");
   if (typeof commands["rename-heading"]?.directory === "string") {
     commands["rename-heading"].directory = path.resolve(
       base,
@@ -275,12 +385,27 @@ export function loadConfig(
       path.resolve(base, entry),
     );
   }
+  for (const command of ["graph", "audit"]) {
+    if (Array.isArray(commands[command]?.entry)) {
+      commands[command].entry = (commands[command].entry as string[]).map((entry) =>
+        path.resolve(base, entry),
+      );
+    }
+  }
+  if (typeof commands["validate-frontmatter"]?.schema === "string") {
+    commands["validate-frontmatter"].schema = path.resolve(
+      base,
+      commands["validate-frontmatter"].schema as string,
+    );
+  }
   const entryPoints = strings(files.entryPoints, "files.entryPoints", []).map((entry) =>
     path.resolve(base, entry),
   );
   for (const entry of [
     ...entryPoints,
     ...((commands.orphans?.entry as string[] | undefined) ?? []),
+    ...((commands.graph?.entry as string[] | undefined) ?? []),
+    ...((commands.audit?.entry as string[] | undefined) ?? []),
   ]) {
     if (!isInside(root, entry)) throw new Error(`Entry point is outside workspace root: ${entry}`);
   }
@@ -304,7 +429,24 @@ export function loadConfig(
       katex: boolean(checks.katex, "checks.katex", true),
       references: boolean(checks.references, "checks.references", true),
       markdownlint: boolean(checks.markdownlint, "checks.markdownlint", false),
+      frontmatter: boolean(checks.frontmatter, "checks.frontmatter", true),
+      graph: boolean(checks.graph, "checks.graph", true),
+      toc: boolean(checks.toc, "checks.toc", true),
+      external: boolean(checks.external, "checks.external", false),
     },
+    frontmatter: {
+      ...(frontmatterSchema ? { schema: resolveFile(base, frontmatterSchema) } : {}),
+      rules: {
+        required: strings(rules.required, "frontmatter.rules.required", []),
+        prohibited: strings(rules.prohibited, "frontmatter.rules.prohibited", []),
+        types,
+        allowedValues,
+        formats,
+        patterns,
+        unique: strings(rules.unique, "frontmatter.rules.unique", []),
+      },
+    },
+    toc: { files: strings(toc.files, "toc.files", []) },
     markdownlint: {
       ...(markdownlintPath ? { config: resolveFile(base, markdownlintPath) } : {}),
     },

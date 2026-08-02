@@ -10,6 +10,13 @@ import {
   type Root,
 } from "./markdown-ast.js";
 import type { ResolvedConfig } from "./config.js";
+import { parse as parseYaml } from "yaml";
+
+export type FrontmatterResult =
+  | { status: "missing" }
+  | { status: "malformed"; message: string }
+  | { status: "non-mapping"; data: unknown }
+  | { status: "valid"; data: Record<string, unknown> };
 
 const SKIPPED_DIRS = new Set(["node_modules", ".git"]);
 
@@ -20,6 +27,22 @@ export interface MarkdownDocument {
   tree: Root;
   headings: MdHeading[];
   references: MdLink[];
+  frontmatter: FrontmatterResult;
+}
+
+export function parseFrontmatter(content: string): FrontmatterResult {
+  if (!content.startsWith("---\n") && !content.startsWith("---\r\n")) return { status: "missing" };
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);
+  if (!match) return { status: "malformed", message: "Unterminated YAML frontmatter" };
+  try {
+    const data: unknown = match[1].trim() === "" ? {} : parseYaml(match[1]);
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
+      return { status: "non-mapping", data };
+    }
+    return { status: "valid", data: data as Record<string, unknown> };
+  } catch (error) {
+    return { status: "malformed", message: (error as Error).message.split("\n")[0] };
+  }
 }
 
 function inside(root: string, target: string): boolean {
@@ -55,6 +78,7 @@ export class Workspace {
       tree,
       headings: extractHeadings(tree),
       references: extractLinks(tree, content),
+      frontmatter: parseFrontmatter(content),
     };
     this.cache.set(absolute, document);
     return document;

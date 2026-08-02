@@ -21,6 +21,9 @@ import { tablesAction } from "./commands/tables.js";
 import { checkUrlsAction } from "./commands/check-urls.js";
 import { orphansAction } from "./commands/orphans.js";
 import { renameHeadingAction } from "./commands/rename-heading.js";
+import { graphAction } from "./commands/graph.js";
+import { validateFrontmatterAction } from "./commands/validate-frontmatter.js";
+import { auditAction } from "./commands/audit.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
 import { loadConfig, selectConfig, defaultLintConcurrency } from "./config.js";
@@ -270,6 +273,9 @@ common(md.command("toc"))
   .option("--min-depth <n>", "Minimum heading depth to include (1-6)")
   .option("--ordered", "Use numbered lists instead of bullets")
   .option("--no-ordered", "Use bullet lists")
+  .option("--check", "Check marker-based TOC synchronization")
+  .option("--write", "Update the content between TOC markers")
+  .option("--dry-run", "Print the proposed marker block without writing")
   .addHelpText(
     "after",
     "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json",
@@ -277,7 +283,124 @@ common(md.command("toc"))
   .action((file: string, opts: Record<string, unknown>) =>
     tocAction(
       file,
-      commandOptions("toc", { maxDepth: "6", minDepth: "1", ordered: false }, opts) as never,
+      commandOptions(
+        "toc",
+        { maxDepth: "6", minDepth: "1", ordered: false, check: false, write: false, dryRun: false },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("graph"))
+  .description("Analyze the workspace Markdown document graph")
+  .argument("[directory]", "Directory to scan (default: workspace root)")
+  .option("--output <mode>", "Graph output: report, mermaid, dot")
+  .option("--entry <file>", "Entry point for reachability (repeatable)", collect)
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nExit codes:\n  0  No broken or unreachable documents\n  2  Broken or unreachable documents found",
+  )
+  .action((directory: string | undefined, opts: Record<string, unknown>) =>
+    graphAction(
+      directory ?? projectConfig.root,
+      commandOptions(
+        "graph",
+        {
+          output: "report",
+          entry: projectConfig.files.entryPoints,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("validate-frontmatter"))
+  .description("Validate Markdown frontmatter with schema and workspace rules")
+  .argument("<path>", "Markdown file or directory")
+  .option("--schema <file>", "JSON or YAML Schema file")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nExit codes:\n  0  Frontmatter is valid\n  1  Configuration or schema error\n  2  Validation findings",
+  )
+  .action((target: string, opts: Record<string, unknown>) =>
+    validateFrontmatterAction(
+      target,
+      commandOptions(
+        "validate-frontmatter",
+        {
+          schema: projectConfig.frontmatter.schema,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("audit"))
+  .description("Run composable checks across a Markdown workspace")
+  .argument("[directory]", "Directory to scan (default: workspace root)")
+  .option("--summary", "Show per-check and per-file counts")
+  .option("--no-summary", "Show detailed findings")
+  .option("--external", "Check external URLs")
+  .option("--no-external", "Do not check external URLs")
+  .option("--frontmatter", "Enable configured frontmatter checks")
+  .option("--no-frontmatter", "Disable frontmatter checks")
+  .option("--graph", "Enable graph checks")
+  .option("--no-graph", "Disable graph checks")
+  .option("--toc", "Enable configured TOC checks")
+  .option("--no-toc", "Disable TOC checks")
+  .option("-s, --style", "Include markdown style checks")
+  .option("--no-style", "Disable markdown style checks")
+  .option("--mermaid", "Enable Mermaid checks")
+  .option("--no-mermaid", "Disable Mermaid checks")
+  .option("--katex", "Enable KaTeX checks")
+  .option("--no-katex", "Disable KaTeX checks")
+  .option("--references", "Enable reference checks")
+  .option("--no-references", "Disable reference checks")
+  .option("--concurrency <n>", "Maximum concurrent checks")
+  .option("--timeout <ms>", "External URL timeout")
+  .option("--retry <n>", "External URL retry count")
+  .option("--entry <file>", "Graph entry point (repeatable)", collect)
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Markdown exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nExit codes:\n  0  Audit passed\n  1  Operational error\n  2  Actionable findings",
+  )
+  .action((directory: string | undefined, opts: Record<string, unknown>) =>
+    auditAction(
+      directory ?? projectConfig.root,
+      commandOptions(
+        "audit",
+        {
+          summary: false,
+          external: projectConfig.checks.external,
+          frontmatter: projectConfig.checks.frontmatter,
+          graph: projectConfig.checks.graph,
+          toc: projectConfig.checks.toc,
+          style: projectConfig.checks.markdownlint,
+          mermaid: projectConfig.checks.mermaid,
+          katex: projectConfig.checks.katex,
+          references: projectConfig.checks.references,
+          concurrency: String(defaultLintConcurrency()),
+          timeout: "5000",
+          retry: "1",
+          entry: projectConfig.files.entryPoints,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+          maxDepth: String(projectConfig.commands.toc?.maxDepth ?? "6"),
+          minDepth: String(projectConfig.commands.toc?.minDepth ?? "1"),
+          ordered: Boolean(projectConfig.commands.toc?.ordered ?? false),
+        },
+        opts,
+      ) as never,
     ),
   );
 

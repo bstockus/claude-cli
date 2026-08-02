@@ -1,0 +1,260 @@
+import path from "node:path";
+import fs from "node:fs";
+import { minimatch } from "minimatch";
+import { lintFile } from "../lint.js";
+import { buildWorkspaceGraph, type WorkspaceGraph } from "../graph.js";
+import { FrontmatterValidator } from "../frontmatter-validation.js";
+import { tocSynchronizationIssue, type TocOptions } from "./toc.js";
+import { checkUrlOccurrences } from "./check-urls.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireDirectory } from "../input.js";
+import { terminate } from "../command-result.js";
+import type { Issue } from "../types.js";
+
+interface AuditOptions extends TocOptions {
+  summary: boolean;
+  external: boolean;
+  frontmatter: boolean;
+  graph: boolean;
+  toc: boolean;
+  style: boolean;
+  mermaid: boolean;
+  katex: boolean;
+  references: boolean;
+  concurrency: string;
+  include: string[];
+  exclude: string[];
+  entry: string[];
+  timeout: string;
+  retry: string;
+}
+
+interface AuditResult {
+  directory: string;
+  enabled: string[];
+  skipped: string[];
+  totals: {
+    files: number;
+    findings: number;
+    filesWithFindings: number;
+    byCheck: Record<string, number>;
+    byFile: Record<string, number>;
+  };
+  findings: Issue[];
+  graph?: {
+    nodes: number;
+    edges: number;
+    broken: number;
+    unreachable: number;
+    deadEnds: number;
+    components: number;
+    cycles: number;
+    reachabilityEvaluated: boolean;
+  };
+}
+
+async function concurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await fn(items[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  return results;
+}
+
+function graphFindings(graph: WorkspaceGraph): Issue[] {
+  return [
+    ...graph.broken.map((edge) => ({
+      file: edge.source,
+      line: edge.line,
+      checker: "graph/broken",
+      message: `Markdown target not found: ${edge.target}`,
+    })),
+    ...graph.unreachable.map((file) => ({
+      file,
+      line: 1,
+      checker: "graph/unreachable",
+      message: "Document is unreachable from configured entry points",
+    })),
+  ];
+}
+
+export async function auditAction(directory: string, opts: AuditOptions): Promise<void> {
+  const dir = requireDirectory(directory, opts);
+  const files = runtime().workspace.markdownFiles(dir, {
+    include: opts.include,
+    exclude: opts.exclude,
+  });
+  const enabled: string[] = [];
+  const skipped: string[] = [];
+  let findings: Issue[] = [];
+  const lintNames = [
+    ["markdownlint", opts.style],
+    ["mermaid", opts.mermaid],
+    ["katex", opts.katex],
+    ["references", opts.references],
+  ] as const;
+  for (const [name, active] of lintNames) (active ? enabled : skipped).push(name);
+  const lintResults = await concurrent(files, parseInt(opts.concurrency, 10) || 1, (file) =>
+    lintFile(file, {
+      style: opts.style,
+      mermaid: opts.mermaid,
+      katex: opts.katex,
+      references: opts.references,
+    }),
+  );
+  findings.push(...lintResults.flat());
+
+  let graph: WorkspaceGraph | undefined;
+  if (opts.graph) {
+    enabled.push("graph");
+    const entries = opts.entry.map((entry) => path.resolve(entry));
+    for (const entry of entries) {
+      if (!fs.existsSync(entry) || !fs.statSync(entry).isFile()) {
+        throw new Error(`Entry point not found: ${entry}`);
+      }
+    }
+    graph = buildWorkspaceGraph(runtime().workspace, files, entries);
+    const graphIssues = graphFindings(graph);
+    const duplicate = new Set(
+      graph.broken.map((edge) => `${edge.source}\0${edge.line}\0${edge.target}`),
+    );
+    findings = findings.filter((issue) => {
+      const target = issue.message.replace(/^Link target not found: /, "");
+      return !(
+        issue.checker === "ref/link" && duplicate.has(`${issue.file}\0${issue.line}\0${target}`)
+      );
+    });
+    findings.push(...graphIssues);
+  } else skipped.push("graph");
+
+  const hasFrontmatter =
+    Boolean(runtime().config.frontmatter.schema) ||
+    Object.values(runtime().config.frontmatter.rules).some((value) =>
+      Array.isArray(value) ? value.length : Object.keys(value).length,
+    );
+  if (opts.frontmatter && hasFrontmatter) {
+    enabled.push("frontmatter");
+    findings.push(
+      ...new FrontmatterValidator(
+        runtime().config.frontmatter.rules,
+        runtime().config.frontmatter.schema,
+      ).validateMany(files.map((file) => runtime().workspace.document(file))),
+    );
+  } else skipped.push("frontmatter");
+
+  if (opts.toc && runtime().config.toc.files.length) {
+    enabled.push("toc");
+    for (const file of files) {
+      const relative = path.relative(runtime().config.root, file).split(path.sep).join("/");
+      if (
+        !runtime().config.toc.files.some((pattern) =>
+          minimatch(relative, pattern, { dot: true, nonegate: true }),
+        )
+      )
+        continue;
+      const result = tocSynchronizationIssue(file, opts);
+      if (result.malformed) throw new Error(`${file}: ${result.malformed}`);
+      if (!result.current) findings.push({ file, line: 1, checker: "toc", message: result.issue! });
+    }
+  } else skipped.push("toc");
+
+  if (opts.external) {
+    enabled.push("external");
+    const occurrences = files.flatMap((file) =>
+      runtime()
+        .workspace.document(file)
+        .references.filter(
+          (ref) =>
+            ref.isExternal &&
+            /^https?:/i.test(ref.target) &&
+            !runtime().config.urls.ignore.some((pattern) =>
+              minimatch(ref.target, pattern, { nonegate: true }),
+            ),
+        )
+        .map((ref) => ({ file, line: ref.line, url: ref.target })),
+    );
+    const results = await checkUrlOccurrences(occurrences, {
+      timeout: parseInt(opts.timeout, 10) || 5000,
+      concurrency: parseInt(opts.concurrency, 10) || 5,
+      retries: parseInt(opts.retry, 10) || 0,
+    });
+    findings.push(
+      ...results
+        .filter((result) => !result.ok)
+        .map((result) => ({
+          file: result.file,
+          line: result.line,
+          checker: "external",
+          message: `${result.url}: ${result.status ?? result.error ?? "request failed"}`,
+        })),
+    );
+  } else skipped.push("external");
+
+  findings.sort(
+    (a, b) => a.checker.localeCompare(b.checker) || a.file.localeCompare(b.file) || a.line - b.line,
+  );
+  const shown = findings.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) }));
+  const byCheck: Record<string, number> = Object.fromEntries(enabled.map((check) => [check, 0]));
+  const byFile: Record<string, number> = {};
+  for (const issue of shown) {
+    const rawCategory = issue.checker.split("/")[0];
+    const category = rawCategory === "ref" ? "references" : rawCategory;
+    byCheck[category] = (byCheck[category] ?? 0) + 1;
+    byFile[issue.file] = (byFile[issue.file] ?? 0) + 1;
+  }
+  const result: AuditResult = {
+    directory: outputPath(dir, opts),
+    enabled,
+    skipped,
+    totals: {
+      files: files.length,
+      findings: shown.length,
+      filesWithFindings: Object.keys(byFile).length,
+      byCheck,
+      byFile,
+    },
+    findings: shown,
+    ...(graph
+      ? {
+          graph: {
+            nodes: graph.nodes.length,
+            edges: graph.edges.length,
+            broken: graph.broken.length,
+            unreachable: graph.unreachable.length,
+            deadEnds: graph.nodes.filter((node) => node.deadEnd).length,
+            components: graph.components.length,
+            cycles: graph.cycles.length,
+            reachabilityEvaluated: graph.reachabilityEvaluated,
+          },
+        }
+      : {}),
+  };
+  let payload: string;
+  if (opts.format === "json") payload = JSON.stringify(result, null, 2);
+  else if (opts.summary)
+    payload = [
+      `Audit: ${result.totals.files} file(s), ${result.totals.findings} finding(s)`,
+      ...Object.entries(byCheck).map(([check, count]) => `  ${check}: ${count}`),
+      ...Object.entries(byFile).map(([file, count]) => `  ${file}: ${count}`),
+    ].join("\n");
+  else
+    payload = shown.length
+      ? [
+          `${shown.length} audit finding(s) in ${result.directory}:`,
+          ...shown.map(
+            (issue) => `  ${issue.file}:${issue.line} [${issue.checker}] ${issue.message}`,
+          ),
+        ].join("\n")
+      : `Audit passed for ${files.length} file(s) in ${result.directory}`;
+  (findings.length ? process.stderr : process.stdout).write(payload + "\n");
+  if (findings.length) terminate(2);
+}
