@@ -37,15 +37,50 @@ describe("Workspace", () => {
     ]);
   });
 
-  it("caches documents and invalidates them", () => {
+  it("caches unchanged documents and detects file changes", () => {
     const file = path.join(tmpDir, "doc.md");
     fs.writeFileSync(file, "# First\n");
     const workspace = new Workspace(loadConfig({ disabled: true }, tmpDir));
     const first = workspace.document(file);
-    fs.writeFileSync(file, "# Second\n");
     expect(workspace.document(file)).toBe(first);
-    workspace.invalidate(file);
+    fs.writeFileSync(file, "# Second\n");
     expect(workspace.document(file).headings[0].text).toBe("Second");
+  });
+
+  it("persists, rebuilds, reports, and clears a workspace index", () => {
+    const file = path.join(tmpDir, "doc.md");
+    const cachePath = path.join(tmpDir, "cache", "index.json");
+    fs.writeFileSync(file, "# First\n");
+    const config = loadConfig({ disabled: true }, tmpDir);
+    const first = new Workspace(config, { cachePath });
+    first.rebuildIndex(tmpDir, [file]);
+    expect(first.indexStatus([file])).toMatchObject({ exists: true, current: 1, stale: 0 });
+
+    const second = new Workspace(config, { cachePath });
+    expect(second.document(file).headings[0].text).toBe("First");
+    fs.writeFileSync(file, "# Changed title\n");
+    expect(second.indexStatus([file])).toMatchObject({ current: 0, stale: 1 });
+    expect(second.document(file).headings[0].text).toBe("Changed title");
+    second.flush();
+    second.clearIndex();
+    expect(fs.existsSync(cachePath)).toBe(false);
+  });
+
+  it("treats structurally corrupt index records as cache misses", () => {
+    const file = path.join(tmpDir, "doc.md");
+    const cachePath = path.join(tmpDir, "index.json");
+    fs.writeFileSync(file, "# Parsed from disk\n");
+    fs.writeFileSync(
+      cachePath,
+      JSON.stringify({
+        version: 1,
+        root: tmpDir,
+        renderer: "github",
+        documents: { "doc.md": { fingerprint: null, document: {} } },
+      }),
+    );
+    const workspace = new Workspace(loadConfig({ disabled: true }, tmpDir), { cachePath });
+    expect(workspace.document(file).headings[0].text).toBe("Parsed from disk");
   });
 
   it("refuses configured scans outside the workspace", () => {

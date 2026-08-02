@@ -106,4 +106,22 @@ commands:
     });
     expect(config.commands["check-urls"].allowedStatus).toEqual([418]);
   });
+
+  it("loads workspace asset extensions and query defaults", () => {
+    const configPath = writeConfig(`
+version: 1
+assets:
+  extensions: [.png, svg]
+commands:
+  query:
+    field: heading-slug
+    assetExtension: [.pdf]
+`);
+    const config = loadConfig({ explicitPath: configPath, disabled: false });
+    expect(config.assets.extensions).toEqual([".png", "svg"]);
+    expect(config.commands.query).toMatchObject({
+      field: "heading-slug",
+      assetExtension: [".pdf"],
+    });
+  });
 });
