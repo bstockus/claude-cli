@@ -27,7 +27,7 @@ jobs:
     name: Publish to GitHub Packages
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # semantic-release needs full history + tags to determine the last release
           fetch-depth: 0
