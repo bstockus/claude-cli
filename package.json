@@ -1,6 +1,6 @@
 {
   "name": "@bstockus/claude-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "A generic CLI toolkit for working with markdown files and related assets",
   "license": "MIT",
