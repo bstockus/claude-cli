@@ -1,15 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import { visit } from "unist-util-visit";
 import type { Text, List } from "mdast";
-import {
-  parseMarkdown,
-  extractHeadings,
-  extractLinks,
-  extractCodeBlocks,
-  type Root,
-} from "../markdown-ast.js";
+import { extractCodeBlocks, type Root } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireFile } from "../input.js";
 
 interface StatsOptions {
   format: string;
@@ -68,18 +62,14 @@ function countLists(tree: Root): { total: number; ordered: number; unordered: nu
 
 export async function statsAction(file: string, opts: StatsOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
+  const document = runtime().workspace.document(filePath);
+  const { tree } = document;
 
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-
-  const headings = extractHeadings(tree);
-  const links = extractLinks(tree);
+  const headings = document.headings;
+  const links = document.references;
   const codeBlocks = extractCodeBlocks(tree);
 
   const byDepth: Record<number, number> = {};
@@ -98,7 +88,7 @@ export async function statsAction(file: string, opts: StatsOptions): Promise<voi
   const images = links.filter((l) => l.isImage);
 
   const stats: DocStats = {
-    file: filePath,
+    file: shownPath,
     wordCount: countWords(tree),
     headings: { total: headings.length, byDepth },
     links: {
@@ -122,7 +112,7 @@ export async function statsAction(file: string, opts: StatsOptions): Promise<voi
   const bold = (s: string) => (isHuman ? `\x1b[1m${s}\x1b[0m` : s);
   const cyan = (s: string) => (isHuman ? `\x1b[36m${s}\x1b[0m` : s);
 
-  lines.push(bold(`Statistics for ${filePath}`));
+  lines.push(bold(`Statistics for ${shownPath}`));
   lines.push("");
   lines.push(`  ${cyan("Words:")} ${stats.wordCount}`);
   lines.push(`  ${cyan("Paragraphs:")} ${stats.paragraphs}`);

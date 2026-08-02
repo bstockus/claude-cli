@@ -11,10 +11,23 @@ export async function checkMarkdownLint(
   filePath: string,
   content: string,
   issues: Issue[],
+  userConfigPath?: string,
 ): Promise<void> {
   let config: Record<string, unknown> = {};
   if (fs.existsSync(configPath)) {
     config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  }
+  if (userConfigPath) {
+    if (!fs.existsSync(userConfigPath)) {
+      throw new Error(`Markdownlint configuration not found: ${userConfigPath}`);
+    }
+    const extension = path.extname(userConfigPath).toLowerCase();
+    const raw = fs.readFileSync(userConfigPath, "utf-8");
+    const userConfig =
+      extension === ".json"
+        ? (JSON.parse(raw) as Record<string, unknown>)
+        : ((await import("yaml")).parse(raw) as Record<string, unknown>);
+    config = { ...config, ...userConfig };
   }
 
   const results = await new Promise<

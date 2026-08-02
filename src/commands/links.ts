@@ -1,7 +1,10 @@
 import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractLinks, type MdLink } from "../markdown-ast.js";
+import type { MdLink } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface LinksOptions {
   format: string;
@@ -22,27 +25,21 @@ function classifyLink(link: MdLink): string {
   return "internal";
 }
 
-function checkExists(link: MdLink, dir: string): boolean | null {
+function checkExists(link: MdLink, sourceFile: string): boolean | null {
   if (link.isExternal || link.isAnchorOnly) return null;
-  const [targetFile] = link.target.split("#", 2);
-  const resolvedPath = path.resolve(dir, targetFile);
+  const targetFile = splitLocalTarget(link.target).path;
+  const resolvedPath = resolveLocalPath(sourceFile, targetFile, runtime().config.root);
   return fs.existsSync(resolvedPath);
 }
 
 export async function linksAction(file: string, opts: LinksOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const contentLines = content.split("\n");
-  const tree = parseMarkdown(content);
-  const dir = path.dirname(filePath);
-  let links = extractLinks(tree);
+  const document = runtime().workspace.document(filePath);
+  const contentLines = document.lines;
+  let links = document.references;
 
   // Filter by type
   if (opts.type) {
@@ -51,9 +48,14 @@ export async function linksAction(file: string, opts: LinksOptions): Promise<voi
 
   // Check existence and optionally filter to broken only
   const resolved = links.map((l) => ({
-    ...l,
+    line: l.line,
+    linkText: l.linkText,
+    target: l.target,
+    isImage: l.isImage,
+    isExternal: l.isExternal,
+    isAnchorOnly: l.isAnchorOnly,
     type: classifyLink(l),
-    exists: checkExists(l, dir),
+    exists: checkExists(l, filePath),
     context: contentLines[l.line - 1]?.trim() ?? "",
   }));
 
@@ -67,10 +69,10 @@ export async function linksAction(file: string, opts: LinksOptions): Promise<voi
   if (filtered.length === 0) {
     if (format === "human") {
       const msg = opts.brokenOnly ? "No broken links" : "No links";
-      process.stdout.write(`\x1b[32m✔ ${msg} found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[32m✔ ${msg} found in ${shownPath}\x1b[0m\n`);
     } else {
       const msg = opts.brokenOnly ? "No broken links" : "No links";
-      process.stdout.write(`${msg} found in ${filePath}\n`);
+      process.stdout.write(`${msg} found in ${shownPath}\n`);
     }
     return;
   }
@@ -87,9 +89,9 @@ export async function linksAction(file: string, opts: LinksOptions): Promise<voi
   const isHuman = format === "human";
 
   if (isHuman) {
-    lines.push(`\n\x1b[1m${filtered.length} link(s) in ${filePath}\x1b[0m\n`);
+    lines.push(`\n\x1b[1m${filtered.length} link(s) in ${shownPath}\x1b[0m\n`);
   } else {
-    lines.push(`${filtered.length} link(s) in ${filePath}:`);
+    lines.push(`${filtered.length} link(s) in ${shownPath}:`);
   }
 
   for (const [type, groupLinks] of groups) {
@@ -126,7 +128,7 @@ export async function linksAction(file: string, opts: LinksOptions): Promise<voi
   const broken = filtered.filter((l) => l.exists === false);
   if (broken.length > 0) {
     process.stderr.write(lines.join("\n") + "\n");
-    process.exit(2);
+    terminate(2);
   } else {
     process.stdout.write(lines.join("\n") + "\n");
   }

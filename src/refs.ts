@@ -7,6 +7,11 @@ export interface Reference {
   isImage: boolean;
   isExternal: boolean;
   isAnchorOnly: boolean;
+  referenceType: "inline" | "full" | "collapsed" | "shortcut";
+  definitionIdentifier?: string;
+  destinationLine: number;
+  destinationStart?: number;
+  destinationEnd?: number;
 }
 
 /**
@@ -15,5 +20,5 @@ export interface Reference {
  */
 export function extractReferences(input: string | Root): Reference[] {
   const tree = typeof input === "string" ? parseMarkdown(input) : input;
-  return extractLinks(tree);
+  return extractLinks(tree, typeof input === "string" ? input : undefined);
 }

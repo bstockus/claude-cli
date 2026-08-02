@@ -23,6 +23,19 @@ async function runCli(
   }
 }
 
+async function runCliIn(
+  cwd: string,
+  ...args: string[]
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  try {
+    const { stdout, stderr } = await exec("node", [cliPath, ...args], { cwd });
+    return { stdout, stderr, exitCode: 0 };
+  } catch (err: unknown) {
+    const e = err as { stdout: string; stderr: string; code: number };
+    return { stdout: e.stdout || "", stderr: e.stderr || "", exitCode: e.code };
+  }
+}
+
 describe("CLI e2e", () => {
   it("shows help with no arguments", async () => {
     const { stdout, exitCode } = await runCli("help");
@@ -892,6 +905,135 @@ describe("CLI e2e", () => {
       expect(parsed.heading.oldSlug).toBe("my-heading");
       expect(parsed.heading.newSlug).toBe("your-heading");
       expect(parsed.dryRun).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads project config upward and applies command defaults", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "configured-cli-"));
+    const nested = path.join(tmpDir, "nested");
+    try {
+      fs.mkdirSync(nested);
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        [
+          "version: 1",
+          "output:",
+          "  format: json",
+          "  paths: relative",
+          "commands:",
+          "  headers:",
+          "    maxDepth: 1",
+          "",
+        ].join("\n"),
+      );
+      fs.writeFileSync(path.join(tmpDir, "doc.md"), "# Top\n\n## Child\n");
+      const { stdout, exitCode } = await runCliIn(nested, "md", "headers", "../doc.md");
+      expect(exitCode).toBe(0);
+      const headings = JSON.parse(stdout);
+      expect(headings).toHaveLength(1);
+      expect(headings[0].slug).toBe("top");
+      const stats = await runCliIn(nested, "md", "stats", "../doc.md");
+      expect(stats.exitCode).toBe(0);
+      expect(JSON.parse(stats.stdout).file).toBe("doc.md");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("lets CLI flags override config and supports --no-config", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "configured-override-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        "version: 1\noutput:\n  format: json\ncommands:\n  headers:\n    maxDepth: 1\n",
+      );
+      fs.writeFileSync(path.join(tmpDir, "doc.md"), "# Top\n\n## Child\n");
+      const overridden = await runCliIn(
+        tmpDir,
+        "md",
+        "headers",
+        "doc.md",
+        "--format=llm",
+        "--max-depth",
+        "2",
+      );
+      expect(overridden.exitCode).toBe(0);
+      expect(overridden.stdout).toContain("2 heading(s)");
+      const unconfigured = await runCliIn(tmpDir, "md", "headers", "doc.md", "--no-config");
+      expect(unconfigured.exitCode).toBe(0);
+      expect(unconfigured.stdout).toContain("2 heading(s)");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts an explicit config path after a subcommand", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "explicit-config-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "custom.yml"), "version: 1\noutput:\n  format: json\n");
+      fs.writeFileSync(path.join(tmpDir, "doc.md"), "# Doc\n");
+      const result = await runCliIn(tmpDir, "md", "headers", "doc.md", "--config", "custom.yml");
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)[0].slug).toBe("doc");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the configured workspace for an omitted lint-dir argument", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "configured-workspace-"));
+    try {
+      fs.mkdirSync(path.join(tmpDir, "docs"));
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        "version: 1\nroot: docs\nchecks:\n  katex: false\n",
+      );
+      fs.writeFileSync(path.join(tmpDir, "docs", "doc.md"), "# Doc\n\nBad math: $\\invalid$\n");
+      const { stdout, exitCode } = await runCliIn(tmpDir, "md", "lint-dir");
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("No issues found across 1 file(s)");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies configured URL ignore patterns without making requests", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "configured-urls-"));
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, ".claude-cli.yml"),
+        'version: 1\nurls:\n  ignore: ["https://127.0.0.1:1/**"]\n',
+      );
+      fs.writeFileSync(path.join(tmpDir, "doc.md"), "[ignored](https://127.0.0.1:1/nope)\n");
+      const { stdout, exitCode } = await runCliIn(tmpDir, "md", "check-urls", "doc.md");
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("No external URLs found");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("renames duplicate GitHub heading anchors and reference-style destinations", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "rename-duplicates-"));
+    const target = path.join(tmpDir, "target.md");
+    const source = path.join(tmpDir, "source.md");
+    try {
+      fs.writeFileSync(target, "# Same\n\n## Same\n");
+      fs.writeFileSync(source, "[second][ref]\n\n[ref]: target.md#same-1\n");
+      const { exitCode } = await runCli(
+        "md",
+        "rename-heading",
+        target,
+        "same-1",
+        "Different",
+        "--directory",
+        tmpDir,
+      );
+      expect(exitCode).toBe(0);
+      expect(fs.readFileSync(target, "utf-8")).toContain("## Different");
+      expect(fs.readFileSync(source, "utf-8")).toContain("target.md#different");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

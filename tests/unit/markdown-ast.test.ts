@@ -27,9 +27,13 @@ describe("slugify", () => {
     expect(slugify("Hello, World!")).toBe("hello-world");
   });
 
-  it("collapses multiple hyphens", () => {
-    expect(slugify("a - b -- c")).toBe("a-b-c");
-    expect(slugify("foo   bar")).toBe("foo-bar");
+  it("uses GitHub's whitespace and hyphen behavior", () => {
+    expect(slugify("a - b -- c")).toBe("a---b----c");
+    expect(slugify("foo   bar")).toBe("foo---bar");
+  });
+
+  it("preserves Unicode characters", () => {
+    expect(slugify("Über café 東京")).toBe("über-café-東京");
   });
 
   it("handles empty string", () => {
@@ -63,6 +67,18 @@ describe("extractLinks", () => {
     const tree = parseMarkdown("[site](https://example.com)");
     const links = extractLinks(tree);
     expect(links[0].isExternal).toBe(true);
+  });
+
+  it("recognizes schemes case-insensitively and protocol-relative URLs", () => {
+    const links = extractLinks(
+      parseMarkdown("[upper](HTTPS://example.com) [relative](//example.com/path)"),
+    );
+    expect(links.every((link) => link.isExternal)).toBe(true);
+  });
+
+  it("does not classify Windows drive paths as URI schemes", () => {
+    const links = extractLinks(parseMarkdown("[file](C:/docs/readme.md)"));
+    expect(links[0].isExternal).toBe(false);
   });
 
   it("identifies anchor-only links", () => {
@@ -101,6 +117,31 @@ describe("extractLinks", () => {
     expect(links[1].target).toBe("b.md");
     expect(links[2].target).toBe("c.png");
   });
+
+  it("resolves full, collapsed, and shortcut reference links and images", () => {
+    const content = [
+      "[full][docs] [collapsed][] [shortcut] ![image][asset]",
+      "",
+      "[docs]: docs.md",
+      "[collapsed]: collapsed.md",
+      "[shortcut]: shortcut.md",
+      "[asset]: image.png",
+    ].join("\n");
+    const links = extractLinks(parseMarkdown(content), content);
+    expect(links.map((link) => [link.target, link.referenceType, link.isImage])).toEqual([
+      ["docs.md", "full", false],
+      ["collapsed.md", "collapsed", false],
+      ["shortcut.md", "shortcut", false],
+      ["image.png", "full", true],
+    ]);
+    expect(links[0].line).toBe(1);
+    expect(links[0].destinationLine).toBe(3);
+    expect(content.slice(links[0].destinationStart, links[0].destinationEnd)).toBe("docs.md");
+  });
+
+  it("ignores an undefined reference-style link", () => {
+    expect(extractLinks(parseMarkdown("[not defined][missing]"))).toHaveLength(0);
+  });
 });
 
 describe("extractHeadings", () => {
@@ -125,6 +166,11 @@ describe("extractHeadings", () => {
   it("returns empty array for no headings", () => {
     const tree = parseMarkdown("Just text.\n\nMore text.");
     expect(extractHeadings(tree)).toHaveLength(0);
+  });
+
+  it("assigns GitHub suffixes to duplicate headings", () => {
+    const headings = extractHeadings(parseMarkdown("# Same\n\n## Same\n\n## Same"));
+    expect(headings.map((heading) => heading.slug)).toEqual(["same", "same-1", "same-2"]);
   });
 });
 

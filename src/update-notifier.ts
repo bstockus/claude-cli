@@ -232,8 +232,7 @@ export interface InstallOptions {
 }
 
 /**
- * Prints an update notice (from cache only, so it is synchronous and survives the
- * `process.exit()` calls the commands make) and kicks off a detached refresh when
+ * Prints an update notice from cache at process exit and kicks off a detached refresh when
  * the cache is stale. Never delays or fails a command.
  */
 export function installUpdateNotifier(opts: InstallOptions): void {
@@ -250,8 +249,7 @@ export function installUpdateNotifier(opts: InstallOptions): void {
   if (shouldNotify({ currentVersion: opts.currentVersion, cache, argv, isTty, env })) {
     const latest = cache?.latestVersion;
     if (latest) {
-      // Deferred to exit so the notice lands after the command's own output,
-      // and still prints when an action calls process.exit() itself.
+      // Deferred to exit so the notice lands after the command's own output.
       process.on("exit", () => {
         process.stderr.write(formatNotice(opts.currentVersion, latest, opts.packageName));
       });

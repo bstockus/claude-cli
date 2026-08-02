@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { Issue } from "../types.js";
 import { extractReferences } from "../refs.js";
 import { parseMarkdown, extractHeadings, type Root } from "../markdown-ast.js";
+import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
+import { runtime } from "../runtime.js";
 
 function checkAnchor(
   sourceFile: string,
@@ -14,7 +15,7 @@ function checkAnchor(
   const tree = typeof targetContent === "string" ? parseMarkdown(targetContent) : targetContent;
   const headingSlugs = new Set(extractHeadings(tree).map((h) => h.slug));
 
-  if (!headingSlugs.has(anchor.toLowerCase())) {
+  if (!headingSlugs.has(anchor)) {
     issues.push({
       file: sourceFile,
       line: lineNum,
@@ -30,7 +31,6 @@ export function checkReferences(
   issues: Issue[],
   tree?: Root,
 ): void {
-  const dir = path.dirname(filePath);
   const parsedTree = tree ?? parseMarkdown(content);
   const refs = extractReferences(parsedTree);
 
@@ -38,14 +38,17 @@ export function checkReferences(
     if (ref.isExternal) continue;
 
     if (ref.isAnchorOnly) {
-      checkAnchor(filePath, parsedTree, ref.line, ref.target.substring(1), issues);
+      const target = splitLocalTarget(ref.target);
+      checkAnchor(filePath, parsedTree, ref.line, target.fragment ?? "", issues);
       continue;
     }
 
-    const [targetFile, anchor] = ref.target.split("#", 2);
+    const target = splitLocalTarget(ref.target);
+    const targetFile = target.path;
+    const anchor = target.fragment;
 
     if (targetFile) {
-      const resolvedPath = path.resolve(dir, targetFile);
+      const resolvedPath = resolveLocalPath(filePath, targetFile, runtime().config.root);
       if (!fs.existsSync(resolvedPath)) {
         issues.push({
           file: filePath,
@@ -57,13 +60,12 @@ export function checkReferences(
       }
 
       if (anchor) {
-        let targetContent: string;
         try {
-          targetContent = fs.readFileSync(resolvedPath, "utf-8");
+          const targetDocument = runtime().workspace.document(resolvedPath);
+          checkAnchor(filePath, targetDocument.tree, ref.line, anchor, issues);
         } catch {
           continue;
         }
-        checkAnchor(filePath, targetContent, ref.line, anchor, issues);
       }
     }
   }

@@ -67,4 +67,15 @@ describe("extractReferences", () => {
     expect(refs).toHaveLength(1);
     expect(refs[0].isExternal).toBe(true);
   });
+
+  it("resolves reference-style links at each use site", () => {
+    const refs = extractReferences("See [guide][docs].\n\n[docs]: guide.md#start");
+    expect(refs).toHaveLength(1);
+    expect(refs[0]).toMatchObject({
+      line: 1,
+      target: "guide.md#start",
+      referenceType: "full",
+      destinationLine: 3,
+    });
+  });
 });

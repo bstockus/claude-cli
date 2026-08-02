@@ -1,7 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
-import { parseMarkdown, extractTables } from "../markdown-ast.js";
+import { extractTables } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireFile } from "../input.js";
 
 interface TablesOptions {
   format: string;
@@ -17,16 +18,10 @@ function resolveFormat(opts: TablesOptions): OutputFormat {
 
 export async function tablesAction(file: string, opts: TablesOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const filePath = path.resolve(file);
+  const filePath = requireFile(file, opts);
+  const shownPath = outputPath(filePath, opts);
 
-  if (!fs.existsSync(filePath)) {
-    process.stderr.write(`Error: File not found: ${filePath}\n`);
-    process.exit(1);
-  }
-
-  const content = fs.readFileSync(filePath, "utf-8");
-  const tree = parseMarkdown(content);
-  let tables = extractTables(tree);
+  let tables = extractTables(runtime().workspace.document(filePath).tree);
 
   if (opts.index !== undefined) {
     const idx = parseInt(opts.index, 10);
@@ -34,7 +29,7 @@ export async function tablesAction(file: string, opts: TablesOptions): Promise<v
       process.stderr.write(
         `Error: Table index out of range: ${opts.index} (file has ${tables.length} table(s))\n`,
       );
-      process.exit(1);
+      terminate(1);
     }
     tables = [tables[idx - 1]];
   }
@@ -59,15 +54,15 @@ export async function tablesAction(file: string, opts: TablesOptions): Promise<v
 
   if (tables.length === 0) {
     if (isHuman) {
-      process.stdout.write(`\x1b[33mNo tables found in ${filePath}\x1b[0m\n`);
+      process.stdout.write(`\x1b[33mNo tables found in ${shownPath}\x1b[0m\n`);
     } else {
-      process.stdout.write(`No tables found in ${filePath}\n`);
+      process.stdout.write(`No tables found in ${shownPath}\n`);
     }
     return;
   }
 
   const lines: string[] = [];
-  lines.push(bold(`${tables.length} table(s) in ${filePath}:`));
+  lines.push(bold(`${tables.length} table(s) in ${shownPath}:`));
 
   for (const t of tables) {
     lines.push(`  ${cyan(`L${t.line}-L${t.endLine}`)}   ${t.columns} columns x ${t.rows} rows`);

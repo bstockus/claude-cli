@@ -41,9 +41,8 @@ e2e coverage in `tests/e2e/cli.test.ts`.
   `md lint`, stdout when clean), so `src/update-notifier.ts` refuses to print unless
   stderr is a TTY, the format is not JSON, `CI` is unset, and the opt-out variable is
   unset. Changing those gates risks corrupting a consumer's parse.
-- **The notice prints from cache in a `process.on("exit")` handler.** Commands call
-  `process.exit()` directly on their issue and error paths, so anything awaited after
-  `parse()` would be skipped. The network refresh happens in a detached child
+- **The notice prints from cache in a `process.on("exit")` handler.** Command actions signal
+  exit status without terminating the process, while the network refresh happens in a detached child
   (`__refresh-update-cache`) guarded by an atomic `wx` lock file, so concurrent
   invocations spawn at most one.
 - **`engines` mirrors jsdom, and the CI matrix must stay inside it.** jsdom is the

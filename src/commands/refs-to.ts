@@ -1,11 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
-import { extractReferences } from "../refs.js";
 import { findMarkdownFiles } from "../lint.js";
 import type { OutputFormat } from "../types.js";
+import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
+import { outputPath, runtime } from "../runtime.js";
+import { requireDirectory } from "../input.js";
 
 interface RefsToOptions {
   format: string;
+  include: string[];
+  exclude: string[];
 }
 
 interface IncomingRef {
@@ -73,26 +76,19 @@ export async function refsToAction(
 ): Promise<void> {
   const format = resolveFormat(opts);
   const targetPath = path.resolve(file);
-  const searchDir = path.resolve(directory ?? ".");
+  const searchDir = requireDirectory(directory ?? ".", opts);
 
-  if (!fs.existsSync(searchDir) || !fs.statSync(searchDir).isDirectory()) {
-    process.stderr.write(`Error: Directory not found: ${searchDir}\n`);
-    process.exit(1);
-  }
-
-  const mdFiles = findMarkdownFiles(searchDir);
+  const mdFiles = findMarkdownFiles(searchDir, { include: opts.include, exclude: opts.exclude });
   const incomingRefs: IncomingRef[] = [];
 
   for (const mdFile of mdFiles) {
-    const content = fs.readFileSync(mdFile, "utf-8");
-    const refs = extractReferences(content);
-    const mdDir = path.dirname(mdFile);
+    const refs = runtime().workspace.document(mdFile).references;
 
     for (const ref of refs) {
       if (ref.isExternal || ref.isAnchorOnly) continue;
 
-      const [targetFile] = ref.target.split("#", 2);
-      const resolvedTarget = path.resolve(mdDir, targetFile);
+      const targetFile = splitLocalTarget(ref.target).path;
+      const resolvedTarget = resolveLocalPath(mdFile, targetFile, runtime().config.root);
 
       if (resolvedTarget === targetPath) {
         incomingRefs.push({
@@ -105,6 +101,10 @@ export async function refsToAction(
     }
   }
 
-  const output = formatResults(incomingRefs, targetPath, format);
+  const shownRefs = incomingRefs.map((ref) => ({
+    ...ref,
+    sourceFile: outputPath(ref.sourceFile, opts),
+  }));
+  const output = formatResults(shownRefs, outputPath(targetPath, opts), format);
   process.stdout.write(output + "\n");
 }

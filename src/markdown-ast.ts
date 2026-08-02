@@ -3,7 +3,21 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkFrontmatter from "remark-frontmatter";
 import { visit } from "unist-util-visit";
-import type { Root, Heading, Link, Image, Code, Text, ListItem, Table, TableRow } from "mdast";
+import GithubSlugger from "github-slugger";
+import type {
+  Root,
+  Heading,
+  Link,
+  Image,
+  LinkReference,
+  ImageReference,
+  Definition,
+  Code,
+  Text,
+  ListItem,
+  Table,
+  TableRow,
+} from "mdast";
 import type { Node } from "unist";
 
 export type { Root } from "mdast";
@@ -15,6 +29,11 @@ export interface MdLink {
   isImage: boolean;
   isExternal: boolean;
   isAnchorOnly: boolean;
+  referenceType: "inline" | "full" | "collapsed" | "shortcut";
+  definitionIdentifier?: string;
+  destinationLine: number;
+  destinationStart?: number;
+  destinationEnd?: number;
 }
 
 export interface MdHeading {
@@ -46,12 +65,7 @@ export function parseMarkdownWithFrontmatter(content: string): Root {
 }
 
 export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .trim();
+  return new GithubSlugger().slug(text);
 }
 
 export function extractText(node: Node): string {
@@ -62,27 +76,123 @@ export function extractText(node: Node): string {
   return parts.join("");
 }
 
-export function extractLinks(tree: Root): MdLink[] {
+function isExternalTarget(target: string): boolean {
+  if (/^[a-z]:[\\/]/i.test(target)) return false;
+  return /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(target);
+}
+
+function destinationSpan(
+  node: Node,
+  target: string,
+  source: string | undefined,
+  kind: "inline" | "definition",
+): { start?: number; end?: number; line: number } {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  const line = node.position?.start.line ?? 0;
+  if (source === undefined || start === undefined || end === undefined) return { line };
+
+  const raw = source.slice(start, end);
+  const searchFrom = kind === "definition" ? raw.indexOf(":") + 1 : raw.lastIndexOf("]") + 1;
+  let relative = raw.indexOf(target, Math.max(0, searchFrom));
+  if (relative === -1) {
+    const escaped = target.replace(/[()]/g, (char) => `\\${char}`);
+    relative = raw.indexOf(escaped, Math.max(0, searchFrom));
+    if (relative !== -1) {
+      return { start: start + relative, end: start + relative + escaped.length, line };
+    }
+    return { line };
+  }
+  return { start: start + relative, end: start + relative + target.length, line };
+}
+
+function makeLink(
+  line: number,
+  linkText: string,
+  target: string,
+  isImage: boolean,
+  referenceType: MdLink["referenceType"],
+  destination: { start?: number; end?: number; line: number },
+  definitionIdentifier?: string,
+): MdLink {
+  return {
+    line,
+    linkText,
+    target,
+    isImage,
+    isExternal: isExternalTarget(target),
+    isAnchorOnly: target.startsWith("#"),
+    referenceType,
+    definitionIdentifier,
+    destinationLine: destination.line,
+    destinationStart: destination.start,
+    destinationEnd: destination.end,
+  };
+}
+
+export function extractLinks(tree: Root, source?: string): MdLink[] {
   const links: MdLink[] = [];
+
+  const definitions = new Map<string, Definition>();
+  visit(tree, "definition", (node: Definition) => {
+    if (!definitions.has(node.identifier)) definitions.set(node.identifier, node);
+  });
 
   visit(tree, "link", (node: Link) => {
     const line = node.position?.start.line ?? 0;
     const linkText = extractText(node);
     const target = node.url;
-    const isExternal = /^(https?:|mailto:|ftp:)/.test(target);
-    const isAnchorOnly = target.startsWith("#");
-
-    links.push({ line, linkText, target, isImage: false, isExternal, isAnchorOnly });
+    links.push(
+      makeLink(
+        line,
+        linkText,
+        target,
+        false,
+        "inline",
+        destinationSpan(node, target, source, "inline"),
+      ),
+    );
   });
 
   visit(tree, "image", (node: Image) => {
     const line = node.position?.start.line ?? 0;
     const linkText = node.alt ?? "";
     const target = node.url;
-    const isExternal = /^(https?:|mailto:|ftp:)/.test(target);
-    const isAnchorOnly = target.startsWith("#");
+    links.push(
+      makeLink(
+        line,
+        linkText,
+        target,
+        true,
+        "inline",
+        destinationSpan(node, target, source, "inline"),
+      ),
+    );
+  });
 
-    links.push({ line, linkText, target, isImage: true, isExternal, isAnchorOnly });
+  const addReference = (node: LinkReference | ImageReference, isImage: boolean): void => {
+    const definition = definitions.get(node.identifier);
+    if (!definition) return;
+    const line = node.position?.start.line ?? 0;
+    const linkText = isImage ? ((node as ImageReference).alt ?? "") : extractText(node);
+    links.push(
+      makeLink(
+        line,
+        linkText,
+        definition.url,
+        isImage,
+        node.referenceType,
+        destinationSpan(definition, definition.url, source, "definition"),
+        node.identifier,
+      ),
+    );
+  };
+
+  visit(tree, "linkReference", (node: LinkReference) => {
+    addReference(node, false);
+  });
+  visit(tree, "imageReference", (node: ImageReference) => {
+    addReference(node, true);
   });
 
   // Sort by line number to maintain document order
@@ -93,11 +203,12 @@ export function extractLinks(tree: Root): MdLink[] {
 
 export function extractHeadings(tree: Root): MdHeading[] {
   const headings: MdHeading[] = [];
+  const slugger = new GithubSlugger();
 
   visit(tree, "heading", (node: Heading) => {
     const line = node.position?.start.line ?? 0;
     const text = extractText(node);
-    headings.push({ line, depth: node.depth, text, slug: slugify(text) });
+    headings.push({ line, depth: node.depth, text, slug: slugger.slug(text) });
   });
 
   return headings;

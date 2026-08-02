@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { checkMermaid } from "../../../src/checkers/mermaid.js";
 import type { Issue } from "../../../src/types.js";
 
@@ -66,7 +66,9 @@ describe("checkMermaid", () => {
   it("produces no issues when no mermaid blocks exist", async () => {
     const content = "# Test\n\nJust some text.\n";
     const issues: Issue[] = [];
-    await checkMermaid("/tmp/test.md", content, issues);
+    const loader = vi.fn();
+    await checkMermaid("/tmp/test.md", content, issues, undefined, loader);
     expect(issues).toHaveLength(0);
+    expect(loader).not.toHaveBeenCalled();
   });
 });

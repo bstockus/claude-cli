@@ -1,6 +1,8 @@
 # claude-cli
 
-A generic CLI toolkit for working with markdown files and related assets.
+An agent-agnostic CLI toolkit for working with Markdown files and related assets. Despite
+the name, `claude-cli` is intended to support all LLM coding agents, as well as humans and
+CI systems; its commands do not depend on Claude or any model-provider API.
 
 Published as `@bstockus/claude-cli` on the GitHub Packages npm registry; the installed
 binary is named `claude-cli`.
@@ -123,6 +125,64 @@ All `md` subcommands support:
 - `--format <fmt>` - Output format: `llm` (default), `human`, `json`
 - `-fh` - Shorthand for `--format=human`
 - `-fj` - Shorthand for `--format=json`
+- `--paths <style>` - Display paths as `absolute` (default) or `relative` to the workspace
+- `--config <file>` - Use a specific `.claude-cli.yml`
+- `--no-config` - Disable automatic project configuration discovery
+
+### Project configuration
+
+For `md` commands, the CLI searches from the current directory upward for
+`.claude-cli.yml`. Command-line options override command-specific settings, which override
+top-level settings, which override built-in defaults. Configuration-derived paths are
+relative to the configuration file; explicit CLI paths remain relative to the invocation
+directory.
+
+```yaml
+version: 1
+root: docs
+
+files:
+  include: ["**/*.md"]
+  exclude: ["archive/**", "generated/**"]
+  entryPoints: ["docs/README.md"]
+
+markdown:
+  renderer: github
+
+output:
+  format: llm
+  paths: relative
+
+checks:
+  mermaid: true
+  katex: true
+  references: true
+  markdownlint: false
+
+markdownlint:
+  config: .markdownlintrc
+
+urls:
+  ignore: ["https://example.invalid/**"]
+  allowedStatuses: [401, 403]
+
+commands:
+  lint-dir:
+    summary: true
+    concurrency: 4
+  toc:
+    minDepth: 2
+    maxDepth: 4
+```
+
+`commands` uses the CLI command names and camel-case option names. It accepts defaults for
+each command's non-positional options. Boolean defaults can always be reversed with the
+corresponding `--no-*` option. Repeated CLI list options replace configured lists.
+
+Directory commands use the configured include/exclude globs consistently. `.git` and
+`node_modules` are always excluded, and directory symlinks are not followed. `lint-dir` and
+`orphans` default to the workspace root when their directory argument is omitted;
+`refs-to` uses it as the default search directory.
 
 ### Exit Codes
 
@@ -146,8 +206,11 @@ claude-cli md lint --style path/to/file.md
 Options:
 
 - `-s, --style` - Include markdown style checks (markdownlint)
+- `--[no-]mermaid` - Enable or disable Mermaid checks
+- `--[no-]katex` - Enable or disable KaTeX checks
+- `--[no-]references` - Enable or disable reference checks
 
-#### `md lint-dir <directory>`
+#### `md lint-dir [directory]`
 
 Run checks on all markdown files in a directory.
 
@@ -161,6 +224,9 @@ Options:
 
 - `-s, --style` - Include markdown style checks (markdownlint)
 - `--summary` - Show one line per file with pass/fail and issue count
+- `--concurrency <n>` - Maximum files checked concurrently
+- `--include <glob>` / `--exclude <glob>` - Override workspace selection (repeatable)
+- `--[no-]mermaid`, `--[no-]katex`, `--[no-]references` - Override configured checks
 
 #### `md check-urls <file>`
 
@@ -210,6 +276,9 @@ claude-cli md refs-to path/to/target.md path/to/search/dir/
 
 If no directory is provided, searches from the current working directory.
 
+With project configuration, the default is the configured workspace root. `--include` and
+`--exclude` override its file selection.
+
 #### `md links <file>`
 
 List all links with context, grouped by type (internal, external, image, anchor).
@@ -225,7 +294,7 @@ Options:
 - `--broken-only` - Only show broken links
 - `--type <type>` - Filter by type: `internal`, `external`, `image`, `anchor`
 
-#### `md orphans <directory>`
+#### `md orphans [directory]`
 
 Find markdown files not referenced by any other markdown file.
 
@@ -238,6 +307,7 @@ Options:
 
 - `--ignore <glob>` - Glob pattern to exclude (repeatable)
 - `--entry <file>` - Entry-point file not considered orphan (repeatable)
+- `--include <glob>` / `--exclude <glob>` - Override workspace selection (repeatable)
 
 ### Document Analysis
 
@@ -323,8 +393,8 @@ claude-cli md section path/to/file.md "Usage" --no-children
 
 Options:
 
-- `--no-include-heading` - Exclude the heading line from output
-- `--no-children` - Exclude nested subsections
+- `--[no-]include-heading` - Include or exclude the heading line
+- `--[no-]children` - Include or exclude nested subsections
 - `--raw` - Output raw markdown only (no metadata, ignores `--format`)
 
 #### `md frontmatter <file>`
@@ -383,6 +453,7 @@ claude-cli md rename-heading path/to/file.md "Old Name" "New Name" --directory p
 Options:
 
 - `--directory <dir>` - Also update references in other markdown files within this directory
+- `--include <glob>` / `--exclude <glob>` - Limit files scanned for cross-file updates
 - `--dry-run` - Show what would change without modifying files
 
 This is the only `md` command that modifies files. Use `--dry-run` first.
@@ -393,6 +464,10 @@ This is the only `md` command that modifies files. Use `--dry-run` first.
 - **mermaid** - Mermaid diagram syntax validation
 - **katex** - KaTeX math expression validation
 - **references** - Link, anchor, and image reference validation
+
+Heading anchors follow GitHub's slugging behavior, including Unicode and duplicate-heading
+suffixes. Inline links and full, collapsed, and shortcut reference-style links and images
+are all resolved.
 
 The `--style` rule configuration lives in `.markdownlintrc` at the package root and ships
 with the published package.

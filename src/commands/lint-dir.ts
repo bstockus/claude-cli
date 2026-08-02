@@ -1,13 +1,20 @@
-import fs from "node:fs";
-import path from "node:path";
 import { lintFile, findMarkdownFiles } from "../lint.js";
 import { formatIssues } from "../formatters.js";
 import type { Issue, OutputFormat } from "../types.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireDirectory } from "../input.js";
 
 interface LintDirOptions {
   format: string;
   style: boolean;
   summary: boolean;
+  concurrency: string;
+  include: string[];
+  exclude: string[];
+  mermaid: boolean;
+  katex: boolean;
+  references: boolean;
 }
 
 function resolveFormat(opts: LintDirOptions): OutputFormat {
@@ -18,31 +25,53 @@ function resolveFormat(opts: LintDirOptions): OutputFormat {
 
 export async function lintDirAction(directory: string, opts: LintDirOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const dirPath = path.resolve(directory);
+  const dirPath = requireDirectory(directory, opts);
+  const shownDir = outputPath(dirPath, opts);
 
-  if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
-    process.stderr.write(`Error: Directory not found: ${dirPath}\n`);
-    process.exit(1);
+  let mdFiles: string[];
+  try {
+    mdFiles = findMarkdownFiles(dirPath, { include: opts.include, exclude: opts.exclude });
+  } catch (error) {
+    process.stderr.write(`Error: ${(error as Error).message}\n`);
+    terminate(1);
   }
-
-  const mdFiles = findMarkdownFiles(dirPath);
   if (mdFiles.length === 0) {
     if (format === "json") {
       process.stdout.write("[]\n");
     } else {
-      process.stdout.write(`No .md files found in ${dirPath}\n`);
+      process.stdout.write(`No .md files found in ${shownDir}\n`);
     }
     return;
   }
 
   const allIssues: Issue[] = [];
   const issuesByFile: Record<string, Issue[]> = {};
-  for (const filePath of mdFiles) {
-    const issues = await lintFile(filePath, { style: opts.style });
-    allIssues.push(...issues);
-    if (issues.length > 0) {
-      issuesByFile[filePath] = issues;
+  const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 1);
+  const results = new Array<Issue[]>(mdFiles.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < mdFiles.length) {
+      const index = next++;
+      const filePath = mdFiles[index];
+      const document = runtime().workspace.document(filePath);
+      results[index] = await lintFile(
+        filePath,
+        {
+          style: opts.style,
+          mermaid: opts.mermaid,
+          katex: opts.katex,
+          references: opts.references,
+        },
+        document,
+      );
     }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, mdFiles.length) }, worker));
+  for (let index = 0; index < mdFiles.length; index++) {
+    const filePath = mdFiles[index];
+    const issues = results[index];
+    allIssues.push(...issues);
+    if (issues.length > 0) issuesByFile[filePath] = issues;
   }
 
   if (opts.summary) {
@@ -53,14 +82,14 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
 
     if (format === "json") {
       const results = mdFiles.map((f) => ({
-        file: f,
+        file: outputPath(f, opts),
         issues: (issuesByFile[f] ?? []).length,
         ok: !(f in issuesByFile),
       }));
       const output = JSON.stringify(results, null, 2) + "\n";
       if (allIssues.length > 0) {
         process.stderr.write(output);
-        process.exit(2);
+        terminate(2);
       }
       process.stdout.write(output);
       return;
@@ -70,9 +99,9 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
     for (const filePath of mdFiles) {
       const count = (issuesByFile[filePath] ?? []).length;
       if (count > 0) {
-        lines.push(`  ${red("✖")} ${filePath}  ${count} issue(s)`);
+        lines.push(`  ${red("✖")} ${outputPath(filePath, opts)}  ${count} issue(s)`);
       } else {
-        lines.push(`  ${green("✔")} ${filePath}`);
+        lines.push(`  ${green("✔")} ${outputPath(filePath, opts)}`);
       }
     }
     const failedCount = Object.keys(issuesByFile).length;
@@ -86,7 +115,7 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
 
     if (allIssues.length > 0) {
       process.stderr.write(lines.join("\n") + "\n");
-      process.exit(2);
+      terminate(2);
     }
     process.stdout.write(lines.join("\n") + "\n");
     return;
@@ -94,10 +123,23 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
 
   if (allIssues.length > 0) {
     if (format === "json") {
-      process.stderr.write(JSON.stringify(allIssues, null, 2) + "\n");
+      process.stderr.write(
+        JSON.stringify(
+          allIssues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) })),
+          null,
+          2,
+        ) + "\n",
+      );
     } else {
       for (const [file, issues] of Object.entries(issuesByFile)) {
-        process.stderr.write(formatIssues(issues, file, format) + "\n");
+        const shownFile = outputPath(file, opts);
+        process.stderr.write(
+          formatIssues(
+            issues.map((issue) => ({ ...issue, file: shownFile })),
+            shownFile,
+            format,
+          ) + "\n",
+        );
       }
       const fileCount = Object.keys(issuesByFile).length;
       const summary =
@@ -106,16 +148,16 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
           : `${allIssues.length} total issue(s) across ${fileCount} file(s)`;
       process.stderr.write(summary + "\n");
     }
-    process.exit(2);
+    terminate(2);
   } else {
     if (format === "json") {
       process.stdout.write("[]\n");
     } else if (format === "human") {
       process.stdout.write(
-        `\x1b[32m✔ No issues found across ${mdFiles.length} file(s) in ${dirPath}\x1b[0m\n`,
+        `\x1b[32m✔ No issues found across ${mdFiles.length} file(s) in ${shownDir}\x1b[0m\n`,
       );
     } else {
-      process.stdout.write(`No issues found across ${mdFiles.length} file(s) in ${dirPath}\n`);
+      process.stdout.write(`No issues found across ${mdFiles.length} file(s) in ${shownDir}\n`);
     }
   }
 }

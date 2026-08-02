@@ -1,13 +1,17 @@
-import fs from "node:fs";
 import path from "node:path";
 import { findMarkdownFiles } from "../lint.js";
-import { extractReferences } from "../refs.js";
 import type { OutputFormat } from "../types.js";
+import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
+import { outputPath, runtime } from "../runtime.js";
+import { terminate } from "../command-result.js";
+import { requireDirectory } from "../input.js";
 
 interface OrphansOptions {
   format: string;
   ignore: string[];
   entry: string[];
+  include: string[];
+  exclude: string[];
 }
 
 function resolveFormat(opts: OrphansOptions): OutputFormat {
@@ -28,14 +32,10 @@ function globToRegex(pattern: string): RegExp {
 
 export async function orphansAction(directory: string, opts: OrphansOptions): Promise<void> {
   const format = resolveFormat(opts);
-  const dirPath = path.resolve(directory);
+  const dirPath = requireDirectory(directory, opts);
+  const shownDir = outputPath(dirPath, opts);
 
-  if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
-    process.stderr.write(`Error: Directory not found: ${dirPath}\n`);
-    process.exit(1);
-  }
-
-  let files = findMarkdownFiles(dirPath);
+  let files = findMarkdownFiles(dirPath, { include: opts.include, exclude: opts.exclude });
 
   // Apply ignore patterns
   if (opts.ignore.length > 0) {
@@ -49,14 +49,12 @@ export async function orphansAction(directory: string, opts: OrphansOptions): Pr
   // Build set of all referenced files
   const referencedFiles = new Set<string>();
   for (const file of files) {
-    const content = fs.readFileSync(file, "utf-8");
-    const refs = extractReferences(content);
-    const dir = path.dirname(file);
+    const refs = runtime().workspace.document(file).references;
     for (const ref of refs) {
       if (ref.isExternal || ref.isAnchorOnly) continue;
-      const [targetFile] = ref.target.split("#", 2);
+      const targetFile = splitLocalTarget(ref.target).path;
       if (targetFile) {
-        const resolved = path.resolve(dir, targetFile);
+        const resolved = resolveLocalPath(file, targetFile, runtime().config.root);
         referencedFiles.add(resolved);
       }
     }
@@ -72,16 +70,16 @@ export async function orphansAction(directory: string, opts: OrphansOptions): Pr
     const json =
       JSON.stringify(
         {
-          directory: dirPath,
+          directory: shownDir,
           totalFiles: files.length,
-          orphans,
+          orphans: orphans.map((file) => outputPath(file, opts)),
         },
         null,
         2,
       ) + "\n";
     if (orphans.length > 0) {
       process.stderr.write(json);
-      process.exit(2);
+      terminate(2);
     }
     process.stdout.write(json);
     return;
@@ -93,22 +91,22 @@ export async function orphansAction(directory: string, opts: OrphansOptions): Pr
   if (orphans.length === 0) {
     if (isHuman) {
       process.stdout.write(
-        `\x1b[32m✔ No orphans found in ${dirPath} (${files.length} files scanned)\x1b[0m\n`,
+        `\x1b[32m✔ No orphans found in ${shownDir} (${files.length} files scanned)\x1b[0m\n`,
       );
     } else {
-      process.stdout.write(`No orphans found in ${dirPath} (${files.length} files scanned)\n`);
+      process.stdout.write(`No orphans found in ${shownDir} (${files.length} files scanned)\n`);
     }
     return;
   }
 
   const lines: string[] = [];
   lines.push(
-    bold(`${orphans.length} orphan(s) found in ${dirPath} (${files.length} files scanned):`),
+    bold(`${orphans.length} orphan(s) found in ${shownDir} (${files.length} files scanned):`),
   );
   for (const o of orphans) {
-    lines.push(`  ${o}`);
+    lines.push(`  ${outputPath(o, opts)}`);
   }
 
   process.stderr.write(lines.join("\n") + "\n");
-  process.exit(2);
+  terminate(2);
 }
