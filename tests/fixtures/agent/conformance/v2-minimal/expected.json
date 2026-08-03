@@ -1,0 +1,28 @@
+{
+  "legacy": false,
+  "layouts": {
+    "claude-code/plugin": [
+      ".claude-plugin/plugin.json",
+      "skills/hello/SKILL.md"
+    ],
+    "claude-code/project": [
+      ".claude/skills/hello/SKILL.md"
+    ],
+    "codex/plugin": [
+      ".codex-plugin/plugin.json",
+      "skills/hello/SKILL.md"
+    ],
+    "codex/project": [
+      ".agents/skills/hello/SKILL.md"
+    ],
+    "cursor/plugin": [
+      ".cursor-plugin/plugin.json",
+      "skills/minimal-hello/SKILL.md"
+    ],
+    "cursor/project": [
+      ".cursor/skills/hello/SKILL.md"
+    ]
+  },
+  "diagnostics": [],
+  "executableModes": {}
+}

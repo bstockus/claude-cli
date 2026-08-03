@@ -1,3 +1,5 @@
+import type { BundleMarketplace } from "./manifest.js";
+
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
 export type AgentProfile = "plugin" | "project";
@@ -35,6 +37,22 @@ export interface BundleRule extends MarkdownComponent {
   globs: string[];
 }
 
+/**
+ * A target-native overlay: files copied verbatim into one target's output,
+ * keyed by the output profile they belong to. This is how a platform-only
+ * feature reaches the generated tree without being given a false portable
+ * abstraction.
+ */
+export interface NativeOverlay {
+  target: AgentTarget;
+  /** Absolute path to the overlay root. */
+  root: string;
+  /** Overlay files, bundle-relative to `root/<profile>`, per output profile. */
+  files: Record<AgentProfile, SourceFile[]>;
+  /** `native/<target>/manifest.json`, deep-merged over the plugin manifest. */
+  manifest?: Record<string, unknown>;
+}
+
 export interface AgentBundle {
   schemaVersion: string;
   name: string;
@@ -43,6 +61,10 @@ export interface AgentBundle {
   root: string;
   legacy: boolean;
   manifest: Record<string, unknown>;
+  /** Declared listing metadata. Read by `agent package`; ignored by `agent convert`. */
+  marketplace?: BundleMarketplace;
+  /** Loaded native overlays. Always empty on a v1 or legacy bundle. */
+  overlays: NativeOverlay[];
   skills: MarkdownComponent[];
   agents: MarkdownComponent[];
   rules: BundleRule[];

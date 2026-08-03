@@ -287,6 +287,9 @@ function publicBundle(bundle: AgentBundle): unknown {
     },
     graph: bundle.graph,
     targets: bundle.manifest.targets ?? {},
+    // Omitted rather than null on a v1 bundle, so existing inspect output is
+    // byte-identical for every bundle that predates schemaVersion 2.
+    ...(bundle.marketplace ? { marketplace: bundle.marketplace } : {}),
   };
 }
 

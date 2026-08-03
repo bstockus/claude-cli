@@ -9,6 +9,7 @@ import type {
   SourceFile,
 } from "./types.js";
 import { diagnostic, TARGETS } from "./types.js";
+import { normalizeManifest } from "./manifest.js";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TARGET_BLOCK = /<!--\s*(\/)?(target|platform):([^\s]+)\s*-->/g;
@@ -429,6 +430,16 @@ export function loadBundle(source: string): AgentBundle {
       }),
     );
   const name = String(manifest.name ?? path.basename(root));
+  // Schema-layer concerns — the accepted schemaVersion set, and the v2-only
+  // marketplace and native blocks — live in manifest.ts. Everything below
+  // stays here because it is identical across schema layers.
+  const normalized = normalizeManifest(
+    manifest,
+    legacy ? legacyPath : neutralPath,
+    legacy,
+    path.basename(root),
+    diagnostics,
+  );
   if (!legacy) {
     for (const field of ["name", "version", "description"] as const)
       if (manifest[field] !== undefined && typeof manifest[field] !== "string")
@@ -438,19 +449,6 @@ export function loadBundle(source: string): AgentBundle {
           }),
           severity: "error",
         });
-    if (
-      manifest.schemaVersion !== undefined &&
-      !["1", "1.0"].includes(String(manifest.schemaVersion))
-    )
-      diagnostics.push({
-        ...diagnostic(
-          "AB112",
-          `Unsupported schemaVersion '${String(manifest.schemaVersion)}'`,
-          "unsupported",
-          { path: neutralPath, remediation: "Use schemaVersion: '1'." },
-        ),
-        severity: "error",
-      });
     if (
       manifest.version !== undefined &&
       typeof manifest.version === "string" &&
@@ -623,13 +621,15 @@ export function loadBundle(source: string): AgentBundle {
       })
     : [];
   const bundle: AgentBundle = {
-    schemaVersion: String(manifest.schemaVersion ?? "legacy"),
+    schemaVersion: normalized.schemaVersion,
     name,
-    version: String(manifest.version ?? "0.0.0"),
-    description: String(manifest.description ?? ""),
+    version: normalized.version,
+    description: normalized.description,
     root,
     legacy,
     manifest,
+    ...(normalized.marketplace ? { marketplace: normalized.marketplace } : {}),
+    overlays: [],
     skills,
     agents,
     rules,

@@ -1,0 +1,18 @@
+# Deliberately shares the `minimal` fixture's name, components, and skill so that
+# its expected.json is character-identical. That equality is the proof that
+# schemaVersion 2 renders a v1-equivalent bundle byte for byte.
+schemaVersion: '2'
+name: minimal
+version: 0.1.0
+description: The smallest valid bundle
+
+marketplace:
+  displayName: Minimal
+  summary: The smallest valid bundle
+  categories: [example]
+  publisher:
+    name: Example
+  license: MIT
+
+native:
+  claude-code: native/claude-code
