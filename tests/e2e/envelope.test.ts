@@ -12,14 +12,36 @@ const cli = path.resolve("dist/cli.js");
 const fixtures = path.resolve("tests/fixtures");
 const temporary: string[] = [];
 
-async function run(...args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+/**
+ * A cache directory of this run's own.
+ *
+ * The workspace index lives under `XDG_CACHE_HOME`, so without this the suite
+ * both depends on and grows whatever the developer already has there — and
+ * `md index status` reports cache counters, which would make its payload depend
+ * on what earlier tests happened to index.
+ */
+function cacheHome(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "envelope-cache-"));
+  temporary.push(root);
+  return root;
+}
+
+async function runWith(
+  cache: string,
+  ...args: string[]
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const env = { ...process.env, CI: "1", XDG_CACHE_HOME: cache };
   try {
-    const result = await exec("node", [cli, ...args], { env: { ...process.env, CI: "1" } });
+    const result = await exec("node", [cli, ...args], { env });
     return { ...result, code: 0 };
   } catch (error) {
     const result = error as { stdout?: string; stderr?: string; code?: number };
     return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", code: result.code ?? 1 };
   }
+}
+
+async function run(...args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  return runWith(cacheHome(), ...args);
 }
 
 function workspace(): string {
@@ -53,51 +75,60 @@ afterEach(() => {
 });
 
 describe("--envelope", () => {
-  it("wraps without changing the payload", async () => {
-    const context = { workspace: workspace(), bundle: bundle() };
-    const commands: string[][] = [
-      ["md", "graph", context.workspace],
-      ["md", "stats", path.join(fixtures, "clean.md")],
-      ["md", "query", "tasks", context.workspace],
-      ["md", "lint", path.join(fixtures, "clean.md")],
-      ["md", "lint", path.join(fixtures, "mixed-errors.md")],
-      ["md", "orphans", context.workspace],
-      ["md", "index", "status", context.workspace],
-      ["md", "headers", path.join(fixtures, "clean.md")],
-      ["md", "toc", path.join(fixtures, "clean.md")],
-      ["agent", "inspect", context.bundle],
-      ["agent", "specs", "--target", "all"],
-    ];
+  interface Case {
+    label: string;
+    args: (context: { workspace: string; bundle: string }) => string[];
+  }
 
-    for (const command of commands) {
-      const plain = await run(...command, "--format", "json");
-      const wrapped = await run(...command, "--format", "json", "--envelope");
-      const label = command.join(" ");
+  // One test per command rather than one test for all of them: each case is two
+  // spawns, so a loaded machine cannot push the whole set past a single
+  // timeout, and a failure names the command in the test title.
+  const cases: Case[] = [
+    { label: "md graph", args: (c) => ["md", "graph", c.workspace] },
+    { label: "md stats", args: () => ["md", "stats", path.join(fixtures, "clean.md")] },
+    { label: "md query tasks", args: (c) => ["md", "query", "tasks", c.workspace] },
+    { label: "md lint (clean)", args: () => ["md", "lint", path.join(fixtures, "clean.md")] },
+    {
+      label: "md lint (findings)",
+      args: () => ["md", "lint", path.join(fixtures, "mixed-errors.md")],
+    },
+    { label: "md orphans", args: (c) => ["md", "orphans", c.workspace] },
+    { label: "md index status", args: (c) => ["md", "index", "status", c.workspace] },
+    { label: "md headers", args: () => ["md", "headers", path.join(fixtures, "clean.md")] },
+    { label: "md toc", args: () => ["md", "toc", path.join(fixtures, "clean.md")] },
+    { label: "agent inspect", args: (c) => ["agent", "inspect", c.bundle] },
+    { label: "agent specs", args: () => ["agent", "specs", "--target", "all"] },
+  ];
 
-      // The exit code and the stream carrying the payload must not change.
-      expect(wrapped.code, `${label}: exit code changed`).toBe(plain.code);
-      const plainOut = plain.stdout.trim() || plain.stderr.trim();
-      const wrappedRaw = wrapped.stdout.trim() || wrapped.stderr.trim();
-      expect(Boolean(wrapped.stdout.trim()), `${label}: stream changed`).toBe(
-        Boolean(plain.stdout.trim()),
-      );
+  it.each(cases)("$label wraps without changing the payload", async (testCase) => {
+    const command = testCase.args({ workspace: workspace(), bundle: bundle() });
+    const label = testCase.label;
+    // Both invocations share one cache directory, so a cache-sensitive payload
+    // such as `md index status` sees the same state twice.
+    const cache = cacheHome();
+    const plain = await runWith(cache, ...command, "--format", "json");
+    const wrapped = await runWith(cache, ...command, "--format", "json", "--envelope");
 
-      const envelope = JSON.parse(wrappedRaw);
-      expect(
-        validateEnvelope(envelope),
-        `${label}: ${JSON.stringify(validateEnvelope.errors)}`,
-      ).toBe(true);
-      expect(envelope.schemaVersion, label).toBe("1");
-      expect(envelope.command, label).toBe(
-        command[0] === "md" || command[0] === "agent" ? `${command[0]} ${command[1]}` : command[0],
-      );
-      expect(envelope.exitCode, label).toBe(plain.code);
-      expect(envelope.ok, label).toBe(plain.code === 0);
-      // The whole point: unwrapping yields exactly the unenveloped output.
-      expect(envelope.data, `${label}: data differs from the plain payload`).toEqual(
-        JSON.parse(plainOut),
-      );
-    }
+    // The exit code and the stream carrying the payload must not change.
+    expect(wrapped.code, `${label}: exit code changed`).toBe(plain.code);
+    const plainOut = plain.stdout.trim() || plain.stderr.trim();
+    const wrappedRaw = wrapped.stdout.trim() || wrapped.stderr.trim();
+    expect(Boolean(wrapped.stdout.trim()), `${label}: stream changed`).toBe(
+      Boolean(plain.stdout.trim()),
+    );
+
+    const envelope = JSON.parse(wrappedRaw);
+    expect(validateEnvelope(envelope), `${label}: ${JSON.stringify(validateEnvelope.errors)}`).toBe(
+      true,
+    );
+    expect(envelope.schemaVersion, label).toBe("1");
+    expect(envelope.command, label).toBe(`${command[0]} ${command[1]}`);
+    expect(envelope.exitCode, label).toBe(plain.code);
+    expect(envelope.ok, label).toBe(plain.code === 0);
+    // The whole point: unwrapping yields exactly the unenveloped output.
+    expect(envelope.data, `${label}: data differs from the plain payload`).toEqual(
+      JSON.parse(plainOut),
+    );
   });
 
   it("carries the schema id when one is published, and null otherwise", async () => {
