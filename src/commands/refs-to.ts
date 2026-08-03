@@ -4,8 +4,10 @@ import type { OutputFormat } from "../types.js";
 import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireDirectory } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface RefsToOptions {
+  envelope?: boolean;
   format: string;
   include: string[];
   exclude: string[];
@@ -24,9 +26,14 @@ function resolveFormat(opts: RefsToOptions): OutputFormat {
   return "llm";
 }
 
-function formatResults(refs: IncomingRef[], targetFile: string, format: OutputFormat): string {
+function formatResults(
+  refs: IncomingRef[],
+  targetFile: string,
+  format: OutputFormat,
+  opts: RefsToOptions,
+): string {
   if (format === "json") {
-    return JSON.stringify(refs, null, 2);
+    return jsonPayload("md refs-to", refs, opts).trimEnd();
   }
 
   if (refs.length === 0) {
@@ -105,6 +112,6 @@ export async function refsToAction(
     ...ref,
     sourceFile: outputPath(ref.sourceFile, opts),
   }));
-  const output = formatResults(shownRefs, outputPath(targetPath, opts), format);
+  const output = formatResults(shownRefs, outputPath(targetPath, opts), format, opts);
   process.stdout.write(output + "\n");
 }

@@ -2,8 +2,10 @@ import { extractCodeBlocks } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface CodeBlocksOptions {
+  envelope?: boolean;
   format: string;
   lang?: string;
   content: boolean;
@@ -34,7 +36,7 @@ export async function codeBlocksAction(file: string, opts: CodeBlocksOptions): P
       lines: b.endLine - b.line + 1,
       ...(opts.content ? { content: b.value } : {}),
     }));
-    process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md code-blocks", output, opts));
     return;
   }
 

@@ -2,8 +2,10 @@ import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface FrontmatterOptions {
+  envelope?: boolean;
   format: string;
   key?: string;
 }
@@ -85,7 +87,7 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
       terminate(1);
     }
     if (format === "json") {
-      process.stdout.write(JSON.stringify(value, null, 2) + "\n");
+      process.stdout.write(jsonPayload("md frontmatter", value, opts));
     } else {
       process.stdout.write(String(value) + "\n");
     }
@@ -93,7 +95,7 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
   }
 
   if (format === "json") {
-    process.stdout.write(JSON.stringify(data, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md frontmatter", data, opts));
     return;
   }
 

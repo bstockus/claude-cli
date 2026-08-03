@@ -5,8 +5,10 @@ import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface RefsOptions {
+  envelope?: boolean;
   format: string;
   external: boolean;
   anchors: boolean;
@@ -41,9 +43,18 @@ function resolveFormat(opts: RefsOptions): OutputFormat {
   return "llm";
 }
 
-function formatResults(refs: ResolvedRef[], filePath: string, format: OutputFormat): string {
+function formatResults(
+  refs: ResolvedRef[],
+  filePath: string,
+  format: OutputFormat,
+  opts: RefsOptions,
+  missingCount: number,
+): string {
   if (format === "json") {
-    return JSON.stringify(refs, null, 2);
+    return jsonPayload("md refs", refs, opts, {
+      exitCode: missingCount ? 2 : 0,
+      summary: { total: refs.length, missing: missingCount },
+    }).trimEnd();
   }
 
   if (refs.length === 0) {
@@ -114,8 +125,8 @@ export async function refsAction(file: string, opts: RefsOptions): Promise<void>
     return { ...publicRef(r), exists: fs.existsSync(resolvedPath) };
   });
 
-  const output = formatResults(resolved, shownPath, format);
   const missing = resolved.filter((r) => r.exists === false);
+  const output = formatResults(resolved, shownPath, format, opts, missing.length);
 
   if (missing.length > 0) {
     process.stderr.write(output + "\n");

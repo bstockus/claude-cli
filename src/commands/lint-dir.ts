@@ -5,8 +5,10 @@ import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireDirectory } from "../input.js";
 import { changedMarkdownFiles } from "../input-selection.js";
+import { jsonPayload } from "../result.js";
 
 interface LintDirOptions {
+  envelope?: boolean;
   format: string;
   style: boolean;
   summary: boolean;
@@ -43,7 +45,7 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
   }
   if (mdFiles.length === 0) {
     if (format === "json") {
-      process.stdout.write("[]\n");
+      process.stdout.write(jsonPayload("md lint-dir", [], opts, { summary: { findings: 0 } }));
     } else if (format === "jsonl" || format === "sarif") {
       process.stdout.write(formatIssues([], shownDir, format, { files: 0 }) + "\n");
     } else {
@@ -94,7 +96,10 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
         issues: (issuesByFile[f] ?? []).length,
         ok: !(f in issuesByFile),
       }));
-      const output = JSON.stringify(results, null, 2) + "\n";
+      const output = jsonPayload("md lint-dir", results, opts, {
+        exitCode: allIssues.length ? 2 : 0,
+        summary: { findings: allIssues.length, files: mdFiles.length },
+      });
       if (allIssues.length > 0) {
         process.stderr.write(output);
         terminate(2);
@@ -142,11 +147,12 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
   if (allIssues.length > 0) {
     if (format === "json") {
       process.stderr.write(
-        JSON.stringify(
+        jsonPayload(
+          "md lint-dir",
           allIssues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) })),
-          null,
-          2,
-        ) + "\n",
+          opts,
+          { exitCode: 2, summary: { findings: allIssues.length, files: mdFiles.length } },
+        ),
       );
     } else if (format === "jsonl" || format === "sarif") {
       process.stderr.write(
@@ -178,7 +184,7 @@ export async function lintDirAction(directory: string, opts: LintDirOptions): Pr
     terminate(2);
   } else {
     if (format === "json") {
-      process.stdout.write("[]\n");
+      process.stdout.write(jsonPayload("md lint-dir", [], opts, { summary: { findings: 0 } }));
     } else if (format === "jsonl" || format === "sarif") {
       process.stdout.write(formatIssues([], shownDir, format, { files: mdFiles.length }) + "\n");
     } else if (format === "human") {

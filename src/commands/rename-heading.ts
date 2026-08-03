@@ -7,8 +7,10 @@ import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
 import type { OutputFormat } from "../types.js";
+import { jsonPayload } from "../result.js";
 
 interface RenameHeadingOptions {
+  envelope?: boolean;
   format: string;
   directory?: string;
   dryRun: boolean;
@@ -155,7 +157,8 @@ export async function renameHeadingAction(
 
   if (format === "json") {
     process.stdout.write(
-      JSON.stringify(
+      jsonPayload(
+        "md rename-heading",
         {
           file: outputPath(filePath, opts),
           heading: {
@@ -171,9 +174,8 @@ export async function renameHeadingAction(
           })),
           dryRun: opts.dryRun,
         },
-        null,
-        2,
-      ) + "\n",
+        opts,
+      ),
     );
   } else {
     const isHuman = format === "human";

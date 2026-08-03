@@ -22,6 +22,7 @@ import {
 import type { ConversionProvenance } from "../agent/output.js";
 import { CONVERSION_REPORT, diffOutput, outputMatches } from "../agent/output.js";
 import { packageName, packageVersion } from "../version.js";
+import { jsonPayload } from "../result.js";
 
 export interface AgentOptions {
   target?: string[];
@@ -32,6 +33,7 @@ export interface AgentOptions {
   dryRun?: boolean;
   check?: boolean;
   format?: string;
+  envelope?: boolean;
 }
 
 export async function agentActionBoundary(
@@ -61,7 +63,9 @@ export async function agentActionBoundary(
           },
         ],
       };
-      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+      process.stdout.write(
+        jsonPayload(`agent ${command}`, result, opts, { ok: false, exitCode: 1 }),
+      );
       terminate(1);
     }
     throw error;
@@ -136,10 +140,15 @@ function formatDoctor(doctor: DoctorReport): string[] {
   return lines;
 }
 
-function formatResult(result: AgentResult, format: string | undefined): string {
+function formatResult(result: AgentResult, opts: AgentOptions): string {
+  const format = opts.format;
   if (format && !["llm", "human", "json"].includes(format))
     throw new Error(`Invalid output format: ${format}`);
-  if (format === "json") return JSON.stringify(result, null, 2) + "\n";
+  if (format === "json")
+    return jsonPayload(`agent ${result.command}`, result, opts, {
+      ok: result.ok,
+      exitCode: result.ok ? 0 : 2,
+    });
   const lines = [`${result.command}: ${result.ok ? "ok" : "findings"}`];
   if (result.source) lines.push(`source: ${result.source}`);
   if (result.targets.length) lines.push(`targets: ${result.targets.join(", ")}`);
@@ -188,7 +197,7 @@ function hasFindings(result: AgentResult, strict = false): boolean {
 
 export function outputResult(result: AgentResult, opts: AgentOptions): void {
   result.ok = !hasFindings(result, Boolean(opts.strict));
-  process.stdout.write(formatResult(result, opts.format));
+  process.stdout.write(formatResult(result, opts));
   if (!result.ok) terminate(2);
 }
 
@@ -198,7 +207,7 @@ export function outputResult(result: AgentResult, opts: AgentOptions): void {
  * without `--strict`, which would make every codex bundle a doctor failure.
  */
 export function outputDecidedResult(result: AgentResult, opts: AgentOptions): void {
-  process.stdout.write(formatResult(result, opts.format));
+  process.stdout.write(formatResult(result, opts));
   if (!result.ok) terminate(2);
 }
 

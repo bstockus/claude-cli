@@ -4,8 +4,10 @@ import { buildWorkspaceGraph, type WorkspaceGraph } from "../graph.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireDirectory } from "../input.js";
 import { terminate } from "../command-result.js";
+import { jsonPayload } from "../result.js";
 
 interface GraphOptions {
+  envelope?: boolean;
   format: string;
   output: "report" | "mermaid" | "dot";
   entry: string[];
@@ -78,7 +80,12 @@ export async function graphAction(directory: string, opts: GraphOptions): Promis
   }
   const report = displayed(graph, opts);
   if (opts.format === "json") {
-    (actionable ? process.stderr : process.stdout).write(JSON.stringify(report, null, 2) + "\n");
+    (actionable ? process.stderr : process.stdout).write(
+      jsonPayload("md graph", report, opts, {
+        exitCode: actionable ? 2 : 0,
+        summary: { broken: graph.broken.length, unreachable: graph.unreachable.length },
+      }),
+    );
   } else {
     const value = report as {
       files: number;

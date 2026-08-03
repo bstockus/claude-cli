@@ -4,6 +4,7 @@ import { resolveMarkdownInputs } from "../input-selection.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import type { Issue, OutputFormat } from "../types.js";
+import { jsonPayload } from "../result.js";
 import {
   getUrlCachePath,
   readUrlCache,
@@ -13,6 +14,7 @@ import {
 } from "../url-cache.js";
 
 interface CheckUrlsOptions {
+  envelope?: boolean;
   format: string;
   timeout: string;
   concurrency: string;
@@ -247,7 +249,8 @@ export async function checkUrlsAction(
   let payload: string;
   const outputFormat = format(opts);
   if (outputFormat === "json")
-    payload = JSON.stringify(
+    payload = jsonPayload(
+      "md check-urls",
       {
         ...(files.length === 1 ? { file: outputPath(files[0], opts) } : {}),
         files: files.length,
@@ -256,9 +259,9 @@ export async function checkUrlsAction(
         broken: broken.length,
         results: shown,
       },
-      null,
-      2,
-    );
+      opts,
+      { exitCode: broken.length ? 2 : 0, summary: { total: shown.length, broken: broken.length } },
+    ).trimEnd();
   else if (outputFormat === "jsonl")
     payload = [
       ...payloadResults.map((result) => JSON.stringify({ type: "result", ...result })),

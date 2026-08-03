@@ -9,6 +9,7 @@ import {
   writeCache,
 } from "../update-notifier.js";
 import type { OutputFormat } from "../types.js";
+import { jsonPayload } from "../result.js";
 
 const exec = promisify(execFile);
 
@@ -67,6 +68,7 @@ export async function refreshUpdateCacheAction(packageName: string): Promise<voi
 
 interface CheckUpdateOptions {
   format: string;
+  envelope?: boolean;
 }
 
 /** Seams for testing; every field defaults to the real implementation. */
@@ -109,16 +111,17 @@ export async function checkUpdateAction(
   if (latest === null) {
     if (format === "json") {
       stderr(
-        JSON.stringify(
+        jsonPayload(
+          "check-update",
           {
             current: currentVersion,
             latest: null,
             updateAvailable: false,
             error: "Could not resolve the latest version",
           },
-          null,
-          2,
-        ) + "\n",
+          opts,
+          { exitCode: 1 },
+        ),
       );
     } else {
       stderr(
@@ -136,7 +139,11 @@ export async function checkUpdateAction(
   const updateAvailable = isNewerVersion(latest, currentVersion);
 
   if (format === "json") {
-    stdout(JSON.stringify({ current: currentVersion, latest, updateAvailable }, null, 2) + "\n");
+    stdout(
+      jsonPayload("check-update", { current: currentVersion, latest, updateAvailable }, opts, {
+        exitCode: updateAvailable ? 2 : 0,
+      }),
+    );
   } else if (updateAvailable) {
     stdout(
       format === "human"

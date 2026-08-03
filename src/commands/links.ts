@@ -5,8 +5,10 @@ import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface LinksOptions {
+  envelope?: boolean;
   format: string;
   brokenOnly: boolean;
   type?: string;
@@ -65,7 +67,7 @@ export async function linksAction(file: string, opts: LinksOptions): Promise<voi
   const filtered = opts.brokenOnly ? resolved.filter((r) => r.exists === false) : resolved;
 
   if (format === "json") {
-    process.stdout.write(JSON.stringify(filtered, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md links", filtered, opts));
     return;
   }
 

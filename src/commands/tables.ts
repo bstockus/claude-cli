@@ -3,8 +3,10 @@ import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface TablesOptions {
+  envelope?: boolean;
   format: string;
   content: boolean;
   index?: string;
@@ -44,7 +46,7 @@ export async function tablesAction(file: string, opts: TablesOptions): Promise<v
       headers: t.headers,
       data: t.data,
     }));
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md tables", result, opts));
     return;
   }
 

@@ -3,11 +3,13 @@ import { extractCodeBlocks, extractTasks } from "../markdown-ast.js";
 import { resolveLocalPath, splitLocalTarget } from "../link-target.js";
 import { requireDirectory } from "../input.js";
 import { outputPath, runtime } from "../runtime.js";
+import { jsonPayload } from "../result.js";
 
 type QueryKind =
   "links-to" | "duplicates" | "unused-assets" | "code-blocks" | "tasks" | "missing-h1";
 
 interface QueryOptions {
+  envelope?: boolean;
   format: string;
   include: string[];
   exclude: string[];
@@ -237,8 +239,8 @@ export async function queryAction(
     ...(summary ? { summary } : {}),
   };
   process.stdout.write(
-    (opts.format === "json"
-      ? JSON.stringify(envelope, null, 2)
-      : textOutput(envelope, opts.format === "human")) + "\n",
+    opts.format === "json"
+      ? jsonPayload("md query", envelope, opts)
+      : textOutput(envelope, opts.format === "human") + "\n",
   );
 }

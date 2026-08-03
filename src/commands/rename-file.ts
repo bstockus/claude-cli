@@ -4,8 +4,10 @@ import { extractLinks, parseMarkdown } from "../markdown-ast.js";
 import { resolveLocalPath, splitLocalTarget } from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import type { OutputFormat } from "../types.js";
+import { jsonPayload } from "../result.js";
 
 interface Options {
+  envelope?: boolean;
   format: string;
   paths?: string;
   dryRun: boolean;
@@ -193,7 +195,7 @@ export async function renameFileAction(
     updates: updates.map((update) => ({ ...update, file: outputPath(update.file, opts) })),
     dryRun: opts.dryRun,
   };
-  if (format(opts) === "json") process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  if (format(opts) === "json") process.stdout.write(jsonPayload("md rename-file", report, opts));
   else {
     const lines = [
       `Move ${report.move.source} → ${report.move.destination}`,

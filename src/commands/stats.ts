@@ -4,8 +4,10 @@ import { extractCodeBlocks, type Root } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface StatsOptions {
+  envelope?: boolean;
   format: string;
 }
 
@@ -103,7 +105,7 @@ export async function statsAction(file: string, opts: StatsOptions): Promise<voi
   };
 
   if (format === "json") {
-    process.stdout.write(JSON.stringify(stats, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md stats", stats, opts));
     return;
   }
 

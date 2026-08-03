@@ -4,8 +4,10 @@ import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
 import { terminate } from "../command-result.js";
 import { renderToc, synchronizeToc } from "../toc.js";
+import { jsonPayload } from "../result.js";
 
 export interface TocOptions {
+  envelope?: boolean;
   format: string;
   maxDepth: string;
   minDepth: string;
@@ -71,30 +73,35 @@ export async function tocAction(file: string, opts: TocOptions): Promise<void> {
       }
       const payload =
         format === "json"
-          ? JSON.stringify({ file: shownPath, changed: result.replacement !== undefined }, null, 2)
-          : `${result.replacement !== undefined ? "Updated" : "TOC already current in"} ${shownPath}`;
-      process.stdout.write(payload + "\n");
+          ? jsonPayload(
+              "md toc",
+              { file: shownPath, changed: result.replacement !== undefined },
+              opts,
+            )
+          : `${result.replacement !== undefined ? "Updated" : "TOC already current in"} ${shownPath}\n`;
+      process.stdout.write(payload);
       return;
     }
     if (dryRun) {
       if (format === "json")
         process.stdout.write(
-          JSON.stringify(
+          jsonPayload(
+            "md toc",
             { file: shownPath, changed: !result.current, block: result.block },
-            null,
-            2,
-          ) + "\n",
+            opts,
+          ),
         );
       else process.stdout.write(result.block! + "\n");
       return;
     }
     const payload =
       format === "json"
-        ? JSON.stringify(
+        ? jsonPayload(
+            "md toc",
             { file: shownPath, current: result.current, issue: result.issue ?? null },
-            null,
-            2,
-          )
+            opts,
+            { exitCode: result.current ? 0 : 2 },
+          ).trimEnd()
         : result.current
           ? `TOC is current in ${shownPath}`
           : `${result.issue} in ${shownPath}`;
@@ -110,16 +117,16 @@ export async function tocAction(file: string, opts: TocOptions): Promise<void> {
     .headings.filter((heading) => heading.depth >= minDepth && heading.depth <= maxDepth);
   if (format === "json") {
     process.stdout.write(
-      JSON.stringify(
+      jsonPayload(
+        "md toc",
         headings.map((heading) => ({
           text: heading.text,
           slug: heading.slug,
           depth: heading.depth,
           line: heading.line,
         })),
-        null,
-        2,
-      ) + "\n",
+        opts,
+      ),
     );
     return;
   }

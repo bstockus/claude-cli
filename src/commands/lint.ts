@@ -4,8 +4,10 @@ import type { Issue, OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { resolveMarkdownInputs } from "../input-selection.js";
+import { jsonPayload } from "../result.js";
 
 interface LintOptions {
+  envelope?: boolean;
   format: string;
   style: boolean;
   mermaid: boolean;
@@ -46,10 +48,22 @@ export async function lintAction(input: string | string[], opts: LintOptions): P
   const shown = issues.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) }));
   const label = files.length === 1 ? outputPath(files[0], opts) : `${files.length} files`;
   if (issues.length) {
-    process.stderr.write(formatIssues(shown, label, format, { files: files.length }) + "\n");
+    process.stderr.write(
+      formatIssues(
+        shown,
+        label,
+        format,
+        { files: files.length },
+        {
+          command: "md lint",
+          envelope: opts.envelope,
+        },
+      ) + "\n",
+    );
     terminate(2);
   }
-  if (format === "json") process.stdout.write("[]\n");
+  if (format === "json")
+    process.stdout.write(jsonPayload("md lint", [], opts, { summary: { findings: 0 } }));
   else if (format === "jsonl" || format === "sarif")
     process.stdout.write(formatIssues([], label, format, { files: files.length }) + "\n");
   else if (format === "human")

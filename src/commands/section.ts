@@ -3,8 +3,10 @@ import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface SectionOptions {
+  envelope?: boolean;
   format: string;
   includeHeading: boolean;
   children: boolean;
@@ -69,7 +71,8 @@ export async function sectionAction(
 
   if (format === "json") {
     process.stdout.write(
-      JSON.stringify(
+      jsonPayload(
+        "md section",
         {
           file: shownPath,
           heading: matched.text,
@@ -79,9 +82,8 @@ export async function sectionAction(
           endLine,
           content: sectionContent,
         },
-        null,
-        2,
-      ) + "\n",
+        opts,
+      ),
     );
     return;
   }

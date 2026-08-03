@@ -1,5 +1,6 @@
 import type { Issue, OutputFormat } from "./types.js";
 import { formatDiagnostics, type DiagnosticSummary } from "./automation.js";
+import { jsonPayload } from "./result.js";
 
 function formatLlm(issues: Issue[], file: string): string {
   if (issues.length === 0) return "";
@@ -21,8 +22,21 @@ function formatHuman(issues: Issue[], file: string): string {
   return lines.join("\n");
 }
 
-function formatJson(issues: Issue[]): string {
-  return JSON.stringify(issues, null, 2);
+/**
+ * Identifies the emitting command so `--envelope` can wrap the finding list.
+ * Omitted by callers that have no envelope option.
+ */
+export interface IssueContract {
+  command: string;
+  envelope?: boolean;
+}
+
+function formatJson(issues: Issue[], contract?: IssueContract): string {
+  if (!contract) return JSON.stringify(issues, null, 2);
+  return jsonPayload(contract.command, issues, contract, {
+    exitCode: issues.length ? 2 : 0,
+    summary: { findings: issues.length },
+  }).trimEnd();
 }
 
 export function formatIssues(
@@ -30,6 +44,7 @@ export function formatIssues(
   file: string,
   format: OutputFormat,
   summary: Partial<DiagnosticSummary> = {},
+  contract?: IssueContract,
 ): string {
   const automated = formatDiagnostics(issues, format, {
     files: summary.files ?? (new Set(issues.map((issue) => issue.file)).size || 1),
@@ -39,7 +54,7 @@ export function formatIssues(
   if (automated !== undefined) return automated;
   switch (format) {
     case "json":
-      return formatJson(issues);
+      return formatJson(issues, contract);
     case "human":
       return formatHuman(issues, file);
     default:

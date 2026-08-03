@@ -5,6 +5,7 @@ import { terminate } from "../command-result.js";
 import type { Issue, OutputFormat } from "../types.js";
 
 interface Options {
+  envelope?: boolean;
   format: string;
   schema?: string;
   include: string[];
@@ -13,6 +14,7 @@ interface Options {
   changedSince?: string;
 }
 import { resolveMarkdownInputs } from "../input-selection.js";
+import { jsonPayload } from "../result.js";
 
 export function frontmatterIssues(files: string[], schema?: string): Issue[] {
   const validator = new FrontmatterValidator(
@@ -39,12 +41,23 @@ export async function validateFrontmatterAction(
       ? outputPath(files[0] ?? runtime().config.root, opts)
       : `${files.length} files`;
   if (issues.length) {
-    process.stderr.write(formatIssues(shown, label, format, { files: files.length }) + "\n");
+    process.stderr.write(
+      formatIssues(
+        shown,
+        label,
+        format,
+        { files: files.length },
+        {
+          command: "md validate-frontmatter",
+          envelope: opts.envelope,
+        },
+      ) + "\n",
+    );
     terminate(2);
   }
   process.stdout.write(
     format === "json"
-      ? "[]\n"
+      ? jsonPayload("md validate-frontmatter", [], opts, { summary: { findings: 0 } })
       : format === "jsonl" || format === "sarif"
         ? formatIssues([], label, format, { files: files.length }) + "\n"
         : `Frontmatter valid in ${files.length} file(s)\n`,

@@ -4,8 +4,10 @@ import { extractText, type Root } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface StructureOptions {
+  envelope?: boolean;
   format: string;
 }
 
@@ -115,7 +117,7 @@ export async function structureAction(file: string, opts: StructureOptions): Pro
   const entries = collectStructure(tree, content);
 
   if (format === "json") {
-    process.stdout.write(JSON.stringify(entries, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md structure", entries, opts));
     return;
   }
 

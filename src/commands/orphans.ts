@@ -5,8 +5,10 @@ import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireDirectory } from "../input.js";
 import { buildWorkspaceGraph } from "../graph.js";
+import { jsonPayload } from "../result.js";
 
 interface OrphansOptions {
+  envelope?: boolean;
   format: string;
   ignore: string[];
   entry: string[];
@@ -57,16 +59,16 @@ export async function orphansAction(directory: string, opts: OrphansOptions): Pr
   const orphans = files.filter((f) => !referencedFiles.has(f) && !entryFiles.has(f));
 
   if (format === "json") {
-    const json =
-      JSON.stringify(
-        {
-          directory: shownDir,
-          totalFiles: files.length,
-          orphans: orphans.map((file) => outputPath(file, opts)),
-        },
-        null,
-        2,
-      ) + "\n";
+    const json = jsonPayload(
+      "md orphans",
+      {
+        directory: shownDir,
+        totalFiles: files.length,
+        orphans: orphans.map((file) => outputPath(file, opts)),
+      },
+      opts,
+      { exitCode: orphans.length ? 2 : 0, summary: { orphans: orphans.length } },
+    );
     if (orphans.length > 0) {
       process.stderr.write(json);
       terminate(2);

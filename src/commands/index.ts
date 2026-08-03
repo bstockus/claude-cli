@@ -1,7 +1,9 @@
 import { requireDirectory } from "../input.js";
 import { outputPath, runtime } from "../runtime.js";
+import { jsonPayload } from "../result.js";
 
 interface IndexOptions {
+  envelope?: boolean;
   format: string;
   include: string[];
   exclude: string[];
@@ -20,9 +22,9 @@ export async function indexAction(
     runtime().workspace.clearIndex();
     const result = { action, directory: outputPath(dir, opts), cleared: true };
     process.stdout.write(
-      (opts.format === "json"
-        ? JSON.stringify(result, null, 2)
-        : `Cleared workspace index for ${result.directory}`) + "\n",
+      opts.format === "json"
+        ? jsonPayload("md index", result, opts)
+        : `Cleared workspace index for ${result.directory}\n`,
     );
     return;
   }
@@ -36,7 +38,7 @@ export async function indexAction(
       : runtime().workspace.indexStatus(files);
   const result = { action, directory: outputPath(dir, opts), ...status };
   if (opts.format === "json") {
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md index", result, opts));
     return;
   }
   const prefix = action === "build" ? "Built" : "Workspace index";

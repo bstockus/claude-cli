@@ -2,8 +2,10 @@ import { extractTasks } from "../markdown-ast.js";
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface TasksOptions {
+  envelope?: boolean;
   format: string;
   status?: string;
   summary: boolean;
@@ -37,7 +39,7 @@ export async function tasksAction(file: string, opts: TasksOptions): Promise<voi
     if (!opts.summary) {
       result.tasks = tasks.map((t) => ({ line: t.line, checked: t.checked, text: t.text }));
     }
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md tasks", result, opts));
     return;
   }
 

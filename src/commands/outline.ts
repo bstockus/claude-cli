@@ -1,8 +1,10 @@
 import type { MdHeading } from "../markdown-ast.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface OutlineOptions {
+  envelope?: boolean;
   format: string;
   maxDepth: string;
 }
@@ -92,7 +94,7 @@ export async function outlineAction(file: string, opts: OutlineOptions): Promise
 
   if (format === "json") {
     const outlineTree = buildTree(headings);
-    process.stdout.write(JSON.stringify(outlineTree, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md outline", outlineTree, opts));
     return;
   }
 

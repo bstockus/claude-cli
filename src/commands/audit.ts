@@ -12,8 +12,10 @@ import { terminate } from "../command-result.js";
 import type { Issue } from "../types.js";
 import { formatDiagnostics } from "../automation.js";
 import { changedMarkdownFiles } from "../input-selection.js";
+import { jsonPayload } from "../result.js";
 
 interface AuditOptions extends TocOptions {
+  envelope?: boolean;
   summary: boolean;
   external: boolean;
   frontmatter: boolean;
@@ -259,7 +261,11 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
       : {}),
   };
   let payload: string;
-  if (opts.format === "json") payload = JSON.stringify(result, null, 2);
+  if (opts.format === "json")
+    payload = jsonPayload("md audit", result, opts, {
+      exitCode: shown.length ? 2 : 0,
+      summary: { findings: shown.length, files: result.totals.files },
+    }).trimEnd();
   else if (opts.format === "jsonl" || opts.format === "sarif")
     payload = formatDiagnostics(shown, opts.format, {
       files: files.length,

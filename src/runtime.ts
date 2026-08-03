@@ -67,6 +67,11 @@ export function commandOptions<T extends Record<string, unknown>>(
   if (resolved.paths !== "absolute" && resolved.paths !== "relative") {
     throw new Error(`Invalid path display style: ${String(resolved.paths)}`);
   }
+  // The envelope is a JSON wrapper; there is nothing to wrap in the other
+  // formats, so accepting it there would silently do nothing.
+  if ((resolved as { envelope?: unknown }).envelope && resolved.format !== "json") {
+    throw new Error("--envelope requires --format json");
+  }
   return resolved;
 }
 

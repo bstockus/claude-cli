@@ -1,8 +1,10 @@
 import type { OutputFormat } from "../types.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
+import { jsonPayload } from "../result.js";
 
 interface HeadersOptions {
+  envelope?: boolean;
   format: string;
   maxDepth: string;
 }
@@ -24,7 +26,7 @@ export async function headersAction(file: string, opts: HeadersOptions): Promise
     .headings.filter((heading) => heading.depth <= maxDepth);
 
   if (format === "json") {
-    process.stdout.write(JSON.stringify(headings, null, 2) + "\n");
+    process.stdout.write(jsonPayload("md headers", headings, opts));
     return;
   }
 
