@@ -21,6 +21,7 @@ import {
 } from "../agent/targets/index.js";
 import type { ConversionProvenance } from "../agent/output.js";
 import { CONVERSION_REPORT, diffOutput, outputMatches } from "../agent/output.js";
+import { writeArtifactsAtomically } from "../agent/writer.js";
 import { packageName, packageVersion } from "../version.js";
 import { jsonPayload } from "../result.js";
 
@@ -232,11 +233,6 @@ function compareOutput(
   return outputMatches(diffOutput(output, artifacts, targets, selectedProfiles));
 }
 
-function nonempty(directory: string): boolean {
-  if (!fs.existsSync(directory)) return false;
-  return !fs.statSync(directory).isDirectory() || fs.readdirSync(directory).length > 0;
-}
-
 function writeAtomically(
   output: string,
   artifacts: Artifact[],
@@ -244,38 +240,13 @@ function writeAtomically(
   selectedProfiles: AgentProfile[],
   force: boolean,
 ): void {
-  for (const target of targets)
-    for (const profile of selectedProfiles) {
-      const destination = path.join(output, target, profile);
-      if (nonempty(destination) && !force)
-        throw new Error(`Destination is nonempty: ${destination} (use --force)`);
-    }
-  const parent = path.dirname(output);
-  fs.mkdirSync(parent, { recursive: true });
-  const staging = fs.mkdtempSync(path.join(parent, `.${path.basename(output)}.staging-`));
-  try {
-    for (const artifact of artifacts) {
-      const destination = path.join(staging, artifact.path);
-      fs.mkdirSync(path.dirname(destination), { recursive: true });
-      fs.writeFileSync(destination, artifact.content, { mode: artifact.mode });
-      fs.chmodSync(destination, artifact.mode);
-    }
-    fs.mkdirSync(output, { recursive: true });
-    for (const target of targets)
-      for (const profile of selectedProfiles) {
-        const destination = path.join(output, target, profile);
-        const staged = path.join(staging, target, profile);
-        if (fs.existsSync(destination)) fs.rmSync(destination, { recursive: true, force: true });
-        fs.mkdirSync(path.dirname(destination), { recursive: true });
-        if (fs.existsSync(staged)) fs.renameSync(staged, destination);
-        else fs.mkdirSync(destination, { recursive: true });
-      }
-    const report = path.join(output, CONVERSION_REPORT);
-    if (fs.existsSync(report)) fs.rmSync(report);
-    fs.renameSync(path.join(staging, CONVERSION_REPORT), report);
-  } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
-  }
+  writeArtifactsAtomically(output, artifacts, {
+    managedRoots: targets.flatMap((target) =>
+      selectedProfiles.map((profile) => path.join(target, profile)),
+    ),
+    looseFiles: [CONVERSION_REPORT],
+    force,
+  });
 }
 
 function publicBundle(bundle: AgentBundle): unknown {
