@@ -1336,3 +1336,151 @@ describe("workspace queries and index", () => {
     }
   });
 });
+
+describe("md context", () => {
+  async function inWorkspace(body: (dir: string) => Promise<void>): Promise<void> {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "md-context-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "a.md"), "# A\nlead\n\n## Details\nbody\n\n[b](./b.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "b.md"), "# B\nbody\n\n[c](./c.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "c.md"), "# C\nbody\n");
+      fs.writeFileSync(path.join(tmpDir, "gone.md"), "# Gone\n\n[x](./missing.md)\n");
+      await body(tmpDir);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  it("packs a seed and its neighbours, with provenance", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(dir, "md", "context", "a.md", "--depth", "1", "-fj");
+      expect(result.exitCode).toBe(0);
+      const pack = JSON.parse(result.stdout);
+      expect(pack.files.map((f: string) => path.basename(f))).toEqual(["a.md", "b.md"]);
+      expect(pack.units.map((u: { heading: string }) => u.heading)).toEqual(["A", "Details", "B"]);
+      expect(pack.units[2].provenance).toMatchObject({ distance: 1, direction: "link" });
+      expect(pack.budget.truncated).toBe(false);
+    });
+  });
+
+  it("emits a paste-ready pack with provenance comments in llm format", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(
+        dir,
+        "md",
+        "context",
+        "a.md",
+        "--depth",
+        "0",
+        "--paths",
+        "relative",
+      );
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("<!-- a.md#a (L1-L3) seed -->");
+      expect(result.stdout).toContain("# A\nlead");
+      expect(result.stdout).toContain("estimate: bytes/4");
+    });
+  });
+
+  it("restricts to a named section, optionally without its subsections", async () => {
+    await inWorkspace(async (dir) => {
+      const whole = await runCliIn(
+        dir,
+        "md",
+        "context",
+        "a.md",
+        "--section",
+        "A",
+        "--depth",
+        "0",
+        "-fj",
+      );
+      expect(JSON.parse(whole.stdout).units.map((u: { heading: string }) => u.heading)).toEqual([
+        "A",
+        "Details",
+      ]);
+      const only = await runCliIn(
+        dir,
+        "md",
+        "context",
+        "a.md",
+        "--section",
+        "A",
+        "--no-children",
+        "--depth",
+        "0",
+        "-fj",
+      );
+      expect(JSON.parse(only.stdout).units.map((u: { heading: string }) => u.heading)).toEqual([
+        "A",
+      ]);
+    });
+  });
+
+  it("seeds from documents referencing --target", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(
+        dir,
+        "md",
+        "context",
+        "--target",
+        "c.md",
+        "--depth",
+        "0",
+        "-fj",
+      );
+      expect(result.exitCode).toBe(0);
+      const pack = JSON.parse(result.stdout);
+      expect(pack.seeds.map((f: string) => path.basename(f))).toEqual(["b.md"]);
+    });
+  });
+
+  it("truncates to a byte budget and exits 0 anyway", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(
+        dir,
+        "md",
+        "context",
+        "a.md",
+        "--depth",
+        "1",
+        "--budget",
+        "12",
+        "-fj",
+      );
+      expect(result.exitCode).toBe(0);
+      const pack = JSON.parse(result.stdout);
+      expect(pack.budget.truncated).toBe(true);
+      expect(pack.omitted.length).toBeGreaterThan(0);
+      expect(pack.budget.usedBytes).toBeLessThanOrEqual(12);
+    });
+  });
+
+  it("reports broken dependencies without changing the exit code", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(dir, "md", "context", "gone.md", "--depth", "0", "-fj");
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).broken).toHaveLength(1);
+    });
+  });
+
+  it("rejects a missing seed, an unknown section, and stdin", async () => {
+    await inWorkspace(async (dir) => {
+      const noSeed = await runCliIn(dir, "md", "context");
+      expect(noSeed.exitCode).toBe(1);
+      expect(noSeed.stderr).toMatch(/requires at least one seed file or --target/);
+
+      const badSection = await runCliIn(dir, "md", "context", "a.md", "--section", "Nope");
+      expect(badSection.exitCode).toBe(1);
+      expect(badSection.stderr).toMatch(/Heading not found in any seed: Nope/);
+
+      const stdin = await runCliIn(dir, "md", "context", "-");
+      expect(stdin.exitCode).toBe(1);
+      expect(stdin.stderr).toMatch(/does not accept stdin/);
+
+      const badDepth = await runCliIn(dir, "md", "context", "a.md", "--depth", "9");
+      expect(badDepth.exitCode).toBe(1);
+      expect(badDepth.stderr).toMatch(/--depth must be an integer from 0 to 6/);
+    });
+  });
+});

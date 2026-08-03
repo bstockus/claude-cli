@@ -63,6 +63,7 @@ This directory is the reference documentation for `claude-cli`.
 - [`md frontmatter`](commands/md-frontmatter.md)
 - [`md tasks`](commands/md-tasks.md)
 - [`md tables`](commands/md-tables.md)
+- [`md context`](commands/md-context.md)
 
 ## Markdown modification commands
 

@@ -249,6 +249,30 @@ describe("declared output schemas match real output", () => {
       exitCode: 2,
     },
     {
+      label: "md context",
+      schema: "md-context",
+      args: (c) => ["md", "context", path.join(c.workspace, "index.md"), "--depth", "1", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md context (truncated by budget)",
+      schema: "md-context",
+      args: (c) => [
+        "md",
+        "context",
+        path.join(c.workspace, "index.md"),
+        "--depth",
+        "1",
+        "--budget",
+        "20",
+        "-fj",
+      ],
+      // A truncated pack is still a success: the budget was honored, not violated.
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "md index status",
       schema: "md-index",
       args: (c) => ["md", "index", "status", c.workspace, "-fj"],

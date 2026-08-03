@@ -414,3 +414,135 @@ export const mdIndexSchema: SchemaEntry = {
     },
   },
 };
+
+export const mdContextSchema: SchemaEntry = {
+  id: "md-context",
+  uri: schemaUri("v1", "md-context"),
+  title: "Context pack",
+  commands: ["md context"],
+  schema: {
+    $schema: DRAFT,
+    $id: schemaUri("v1", "md-context"),
+    title: "Context pack",
+    description:
+      "Units are ordered by graph distance, then the order a document entered the traversal, then document order. The pack is a prefix of that order: the first unit that would exceed the budget stops inclusion, and every later unit is reported under `omitted`.",
+    type: "object",
+    required: [
+      "seeds",
+      "depth",
+      "backlinks",
+      "files",
+      "units",
+      "omitted",
+      "broken",
+      "budget",
+      "totals",
+    ],
+    properties: {
+      seeds: stringArray,
+      depth: { type: "integer", minimum: 0, description: "Graph hops followed from the seeds." },
+      backlinks: { type: "boolean" },
+      files: {
+        description: "Documents contributing at least one included unit.",
+        ...stringArray,
+      },
+      units: { type: "array", items: { $ref: "#/$defs/unit" } },
+      omitted: { type: "array", items: { $ref: "#/$defs/omission" } },
+      broken: { type: "array", items: { $ref: "#/$defs/brokenDependency" } },
+      budget: { $ref: "#/$defs/budget" },
+      totals: {
+        type: "object",
+        required: ["files", "units", "bytes"],
+        properties: {
+          files: { type: "integer", minimum: 0 },
+          units: { type: "integer", minimum: 0 },
+          bytes: { type: "integer", minimum: 0 },
+        },
+      },
+    },
+    $defs: {
+      provenance: {
+        type: "object",
+        required: ["distance", "direction", "reason"],
+        properties: {
+          distance: { type: "integer", minimum: 0, description: "Hops from the nearest seed." },
+          via: { type: "string", description: "Document that pulled this one in." },
+          viaLine: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "Line carrying the link: in `via` when direction is 'link', in this document when it is 'backlink'.",
+          },
+          direction: { enum: ["seed", "link", "backlink"] },
+          reason: { type: "string" },
+        },
+      },
+      unit: {
+        type: "object",
+        required: [
+          "id",
+          "kind",
+          "file",
+          "heading",
+          "slug",
+          "depth",
+          "startLine",
+          "endLine",
+          "bytes",
+          "provenance",
+          "content",
+        ],
+        properties: {
+          id: { type: "string", description: "`<file>#<slug>`, `#frontmatter`, or `#preamble`." },
+          kind: { enum: ["frontmatter", "preamble", "section"] },
+          file: { type: "string" },
+          heading: { type: ["string", "null"] },
+          slug: { type: ["string", "null"] },
+          depth: { type: "integer", minimum: 0, maximum: 6 },
+          startLine: { type: "integer", minimum: 0 },
+          endLine: { type: "integer", minimum: 0 },
+          bytes: { type: "integer", minimum: 0, description: "UTF-8 bytes of `content`." },
+          provenance: { $ref: "#/$defs/provenance" },
+          content: { type: "string" },
+        },
+      },
+      omission: {
+        type: "object",
+        required: ["id", "file", "heading", "bytes", "reason"],
+        properties: {
+          id: { type: "string" },
+          file: { type: "string" },
+          heading: { type: ["string", "null"] },
+          bytes: { type: "integer", minimum: 0 },
+          reason: { enum: ["budget"] },
+        },
+      },
+      brokenDependency: {
+        type: "object",
+        required: ["source", "target", "resolved", "line"],
+        properties: {
+          source: { type: "string" },
+          target: { type: "string", description: "The link target as written." },
+          resolved: { type: "string" },
+          line: { type: "integer", minimum: 0 },
+        },
+      },
+      budget: {
+        type: "object",
+        required: ["limitBytes", "usedBytes", "omittedBytes", "tokenEstimate", "truncated"],
+        properties: {
+          limitBytes: { type: ["integer", "null"], minimum: 0 },
+          usedBytes: { type: "integer", minimum: 0 },
+          omittedBytes: { type: "integer", minimum: 0 },
+          tokenEstimate: {
+            type: "integer",
+            minimum: 0,
+            description:
+              "ceil(usedBytes / 4). A size signal, not a model tokenizer; it never affects which units are included.",
+          },
+          truncated: { type: "boolean" },
+        },
+      },
+    },
+  },
+};

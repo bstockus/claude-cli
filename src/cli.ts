@@ -25,6 +25,7 @@ import { graphAction } from "./commands/graph.js";
 import { validateFrontmatterAction } from "./commands/validate-frontmatter.js";
 import { auditAction } from "./commands/audit.js";
 import { queryAction } from "./commands/query.js";
+import { contextAction } from "./commands/context.js";
 import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
@@ -769,6 +770,51 @@ common(md.command("section"))
       commandOptions(
         "section",
         { includeHeading: true, children: true, raw: false },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("context"))
+  .description("Assemble a reproducible context pack from the workspace graph")
+  .argument("[seeds...]", "Markdown files, directories, or globs to start from")
+  .option("--depth <n>", "Graph hops to follow from the seeds (0-6)")
+  .option("--section <heading>", "Restrict seeds to this heading (repeatable)", collect)
+  .option("--target <path>", "Seed with documents referencing this path[#fragment]")
+  .option("--budget <bytes>", "Maximum UTF-8 bytes of unit content, or 0 for unlimited")
+  .option("--backlinks", "Also follow references backwards")
+  .option("--no-backlinks", "Follow references forwards only")
+  .option("--children", "Expand --section through its subsections")
+  .option("--no-children", "Limit --section to the named section")
+  .option("--frontmatter", "Emit each document's frontmatter as a unit")
+  .option("--no-frontmatter", "Omit frontmatter")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nUnits are ordered by graph distance, then discovery order, then document order.\n" +
+      "The pack is a prefix of that order: the first unit that would exceed --budget stops\n" +
+      "inclusion, and the rest are reported under `omitted`.\n\n" +
+      "The token estimate is bytes/4, not a model tokenizer, and never affects inclusion.\n\n" +
+      "Exit codes:\n" +
+      "  0  Pack written to stdout, whether or not it was truncated\n" +
+      "  1  No seeds given, or a --section heading matched nothing",
+  )
+  .action((seeds: string[], opts: Record<string, unknown>) =>
+    contextAction(
+      seeds,
+      commandOptions(
+        "context",
+        {
+          depth: "1",
+          section: [] as string[],
+          budget: "0",
+          backlinks: false,
+          children: true,
+          frontmatter: false,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+        },
         opts,
       ) as never,
     ),

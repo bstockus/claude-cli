@@ -283,6 +283,11 @@ const CONTRACTS: CommandContract[] = [
 
   // Markdown: workspace data
   inspection("query", { outputSchema: "md-query" }),
+  inspection("context", {
+    outputSchema: "md-context",
+    notes:
+      "Broken dependencies and budget omissions are reported inside the payload and never change the exit code; use md links or md audit to fail on them. budget.tokenEstimate is usedBytes/4, not a model tokenizer.",
+  }),
   inspection("index", {
     outputSchema: "md-index",
     writes: true,

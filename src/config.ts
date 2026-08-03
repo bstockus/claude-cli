@@ -164,6 +164,19 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "summary",
     "assetExtension",
   ]),
+  context: new Set([
+    "format",
+    "paths",
+    "depth",
+    "section",
+    "target",
+    "budget",
+    "backlinks",
+    "children",
+    "frontmatter",
+    "include",
+    "exclude",
+  ]),
   index: new Set(["format", "paths", "include", "exclude"]),
 };
 
@@ -250,6 +263,7 @@ const BOOLEAN_OPTIONS = new Set([
   "raw",
   "includeOk",
   "dryRun",
+  "backlinks",
   "mermaid",
   "katex",
   "references",
@@ -288,10 +302,16 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
     if (!Number.isInteger(number) || number < 1)
       throw new Error(`${name} must be a positive integer`);
   }
-  if (key === "cacheTtl") {
+  if (key === "cacheTtl" || key === "budget") {
     const number = Number(value);
     if (!Number.isInteger(number) || number < 0) {
       throw new Error(`${name} must be a non-negative integer`);
+    }
+  }
+  if (key === "depth") {
+    const number = Number(value);
+    if (!Number.isInteger(number) || number < 0 || number > 6) {
+      throw new Error(`${name} must be an integer from 0 to 6`);
     }
   }
   if (key === "retry") {
@@ -322,7 +342,11 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
   ) {
     throw new Error(`${name} must be a string`);
   }
-  if (["include", "exclude", "ignore", "ignoreDomain", "entry", "assetExtension"].includes(key))
+  if (
+    ["include", "exclude", "ignore", "ignoreDomain", "entry", "assetExtension", "section"].includes(
+      key,
+    )
+  )
     strings(value, name, []);
   if (["allowedStatus", "headFallbackStatus"].includes(key)) {
     if (

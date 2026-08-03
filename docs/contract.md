@@ -150,6 +150,7 @@ guarantees are unaffected.
 | `md-check-urls`     | `md check-urls`                                                            |
 | `md-orphans`        | `md orphans`                                                               |
 | `md-index`          | `md index`                                                                 |
+| `md-context`        | `md context`                                                               |
 | `agent-result`      | Every `agent` subcommand, including the failure form.                      |
 | `check-update`      | `check-update`                                                             |
 | `describe`          | `describe --format json`                                                   |

@@ -658,6 +658,32 @@ Markdown files, while `clear` removes only the current workspace index. The inde
 validate file size and modification time before reuse; missing, corrupt, incompatible, or
 unwritable cache data is treated as a cache miss and never makes analysis fail.
 
+#### `md context [seeds...]`
+
+Assemble a reproducible context pack for an agent: ordered Markdown with source and line
+provenance, plus a manifest explaining why each piece was included.
+
+```bash
+claude-cli md context docs/architecture.md --depth 2 --budget 24000
+claude-cli md context docs/release.md --section "Release process" --format json
+claude-cli md context --target src/cli.ts --backlinks
+```
+
+Starting from the seeds, it walks the reference graph up to `--depth` hops and emits each
+reached document as flat heading sections. The partition never overlaps, so `--budget` accounts
+for bytes exactly. Truncation is by whole units and the pack is a **prefix** of the order —
+the first unit that would exceed the budget stops inclusion, and the rest are listed under
+`omitted`. The reported token count is `bytes/4`, a size signal rather than a model tokenizer,
+and it never affects what is included.
+
+Everything is deterministic: no embeddings, no ranking model, no network. Broken references
+among the included documents are reported in the payload but do not change the exit code — use
+`md links` or `md audit` to fail on those.
+
+Options: `--depth <n>` (0–6, default 1), `--section <heading>` (repeatable), `--target <path>`,
+`--budget <bytes>` (0 is unlimited), `--backlinks`, `--children`, `--frontmatter`, `--include`,
+`--exclude`.
+
 ### Document Analysis
 
 #### `md headers <file>`

@@ -63,6 +63,7 @@ The `md` parent accepts `--config <file>` to select a `.claude-cli.yml` file and
 | [`md orphans [directory]`](commands/md-orphans.md)                                      | Find unreferenced Markdown files.                                                 |
 | [`md query <kind> [directory]`](commands/md-query.md)                                   | Run one focused informational workspace query.                                    |
 | [`md index <action> [directory]`](commands/md-index.md)                                 | Inspect, build, or clear the persistent workspace index.                          |
+| [`md context [seeds...]`](commands/md-context.md)                                       | Assemble a reproducible context pack from the reference graph.                    |
 | [`md rename-heading <file> <old-heading> <new-heading>`](commands/md-rename-heading.md) | Rename a heading and update matching anchor references.                           |
 | [`md rename-file <source> <destination>`](commands/md-rename-file.md)                   | Move a document or asset and update Markdown references.                          |
 
