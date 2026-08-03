@@ -16,6 +16,8 @@ export const agentResultSchema: SchemaEntry = {
     "agent compat",
     "agent doctor",
     "agent specs",
+    "agent init",
+    "agent add",
   ],
   schema: {
     $schema: DRAFT,
@@ -27,7 +29,7 @@ export const agentResultSchema: SchemaEntry = {
     required: ["command", "ok", "targets", "artifacts", "diagnostics"],
     properties: {
       command: {
-        enum: ["convert", "validate", "inspect", "compat", "doctor", "specs"],
+        enum: ["convert", "validate", "inspect", "compat", "doctor", "specs", "init", "add"],
       },
       ok: { type: "boolean" },
       source: { type: "string", description: "Resolved bundle root, when one was given." },
@@ -59,6 +61,30 @@ export const agentResultSchema: SchemaEntry = {
       },
       specs: { description: "The target conformance profiles, emitted by `agent specs`." },
       doctor: { $ref: "#/$defs/doctor" },
+      plan: {
+        description:
+          "What a writing command did or would do, emitted by `agent init` and `agent add`.",
+        type: "object",
+        required: ["root", "operations"],
+        properties: {
+          root: { type: "string" },
+          operations: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["action", "path", "kind", "bytes", "mode"],
+              properties: {
+                action: { enum: ["create", "update", "skip"] },
+                path: { type: "string", description: "POSIX path relative to `root`." },
+                kind: { type: "string" },
+                bytes: { type: "integer", minimum: 0 },
+                mode: { type: "string", description: "Octal file mode, e.g. '0644'." },
+                reason: { type: "string" },
+              },
+            },
+          },
+        },
+      },
       dryRun: { type: "boolean" },
       check: { type: "boolean" },
       stale: { type: "boolean" },

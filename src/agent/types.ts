@@ -131,8 +131,27 @@ export interface DoctorReport {
   native: never[];
 }
 
+export type PlanAction = "create" | "update" | "skip";
+
+export interface PlanOperation {
+  action: PlanAction;
+  /** POSIX path relative to the plan root. */
+  path: string;
+  kind: string;
+  bytes: number;
+  /** Octal file mode, spelled as in `artifacts[].mode`. */
+  mode: string;
+  /** Why a `skip`, or what an `update` changes. */
+  reason?: string;
+}
+
+export interface AgentPlan {
+  root: string;
+  operations: PlanOperation[];
+}
+
 export interface AgentResult {
-  command: "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs";
+  command: "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs" | "init" | "add";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -145,6 +164,8 @@ export interface AgentResult {
   specs?: unknown;
   /** Conformance findings, emitted by `agent doctor`. */
   doctor?: DoctorReport;
+  /** What a writing command did or would do, emitted by `agent init` and `agent add`. */
+  plan?: AgentPlan;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

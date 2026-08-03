@@ -300,6 +300,28 @@ describe("declared output schemas match real output", () => {
       outcome: "success",
       exitCode: 1,
     },
+    {
+      label: "agent init --dry-run",
+      schema: "agent-result",
+      args: (c) => [
+        "agent",
+        "init",
+        "demo",
+        "--output",
+        path.join(c.workspace, "demo"),
+        "--dry-run",
+        "-fj",
+      ],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "agent add --dry-run",
+      schema: "agent-result",
+      args: (c) => ["agent", "add", "skill", "extra", c.bundle, "--dry-run", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
   ];
 
   it.each(cases)("$label", async (testCase) => {

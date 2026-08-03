@@ -136,6 +136,28 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "All output goes to stdout. An approximate mapping alone does not fail doctor, unlike convert and validate.",
   }),
+  agentCommand("init", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Bundle scaffolded, or dry run completed"),
+      USAGE,
+      FINDINGS("--check found a missing or differing scaffold"),
+    ],
+    notes:
+      "Never prompts. Placeholder marketplace metadata is valid here; publish readiness is checked by agent package.",
+  }),
+  agentCommand("add", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Component added, or dry run completed"),
+      USAGE,
+      FINDINGS("--check found a missing or differing component"),
+    ],
+    notes:
+      "agent-bundle.yaml is edited through a comment-preserving YAML document and is left byte-untouched when no manifest change is needed.",
+  }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],
     stream: { success: "stdout" },

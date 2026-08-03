@@ -16,6 +16,8 @@ This directory is the reference documentation for `claude-cli`.
 
 ## Agent commands
 
+- [`agent init`](commands/agent-init.md)
+- [`agent add`](commands/agent-add.md)
 - [`agent convert`](commands/agent-convert.md)
 - [`agent validate`](commands/agent-validate.md)
 - [`agent inspect`](commands/agent-inspect.md)

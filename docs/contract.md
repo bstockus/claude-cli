@@ -122,6 +122,20 @@ schema yet. `--envelope` without `--format json` is an error rather than a silen
 `describe` and `schema` do not accept it — a schema document is written as-is, and the contract
 description is not a command result.
 
+## Experimental commands
+
+Most commands are `stability: "stable"` and are covered by the breaking-change rules above. The
+agent lifecycle commands added most recently are declared `stability: "experimental"` in
+`describe` output, meaning their payload shapes may still change without a major schema
+version:
+
+```bash
+claude-cli describe -fj | jq -r '.commands[] | select(.stability=="experimental") | .id'
+```
+
+They share the `agent-result` schema with the stable agent commands. The stable commands'
+guarantees are unaffected.
+
 ## Published schemas
 
 | Id                  | Covers                                                                     |

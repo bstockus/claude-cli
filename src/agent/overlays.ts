@@ -17,6 +17,9 @@ const PROFILES: AgentProfile[] = ["plugin", "project"];
 /** File name of the optional plugin-manifest fragment inside an overlay root. */
 export const OVERLAY_MANIFEST = "manifest.json";
 
+/** Root-level files that document the overlay rather than contributing output. */
+const IGNORED_AT_ROOT = new Set(["README.md", "readme.md"]);
+
 function error(
   diagnostics: AgentDiagnostic[],
   code: string,
@@ -128,7 +131,12 @@ export function loadOverlays(
         continue;
       }
       if (!entry.isDirectory()) {
-        // A stray file at the overlay root has no output profile to belong to.
+        // Documentation and VCS scaffolding at the overlay root are ignored
+        // rather than rejected — an overlay is a directory people maintain by
+        // hand, and `agent init` writes a README explaining the contract.
+        if (IGNORED_AT_ROOT.has(entry.name) || entry.name.startsWith(".")) continue;
+        // Anything else has no output profile to belong to. Reporting it beats
+        // silently dropping a file the author expected to be emitted.
         error(
           diagnostics,
           "AB186",

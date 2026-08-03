@@ -43,6 +43,8 @@ import {
   agentActionBoundary,
 } from "./commands/agent.js";
 import { agentSpecsAction } from "./commands/agent-specs.js";
+import type { AgentAddOptions } from "./commands/agent-scaffold.js";
+import { agentAddAction, agentInitAction } from "./commands/agent-scaffold.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -196,6 +198,57 @@ agent
   )
   .action((source: string | undefined, opts: Parameters<typeof agentDoctorAction>[1]) =>
     agentActionBoundary("doctor", opts, () => agentDoctorAction(source, opts)),
+  );
+
+agent
+  .command("init")
+  .description("Scaffold a new portable agent bundle")
+  .argument("<name>", "Bundle name in lowercase kebab-case")
+  .option("--output <dir>", "Destination root (default: ./<name>)")
+  .option("--description <text>", "Bundle description")
+  .option("--bundle-version <semver>", "Initial bundle version", "0.1.0")
+  .option("--license <spdx>", "License recorded in marketplace metadata", "MIT")
+  .option("--component <kind>", "Component to scaffold (repeatable, or none)", collect)
+  .option("--target <target>", "Target (repeatable, or all)", collect)
+  .option("--profile <profile>", "Output profile: plugin, project, both", "both")
+  .option("--overlays", "Create a native/<target>/ overlay root per target")
+  .option("--force", "Scaffold into a nonempty destination")
+  .option("--dry-run", "Report the plan without writing")
+  .option("--check", "Report whether the scaffold is already present and current")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nNever prompts. Placeholder marketplace metadata is valid here; publish\nreadiness is checked by agent package.\n\nExit codes:\n  0  Bundle scaffolded, or dry run completed\n  1  Invocation or I/O error\n  2  --check found a missing or differing scaffold",
+  )
+  .action((name: string, opts: Parameters<typeof agentInitAction>[1]) =>
+    agentActionBoundary("init", opts, () => agentInitAction(name, opts)),
+  );
+
+agent
+  .command("add")
+  .description("Add one component to an existing bundle")
+  .argument("<kind>", "skill, agent, rule, hook, policy, mcp, or overlay")
+  .argument("<name>", "Component name, or the portable event name for a hook")
+  .argument("[bundle]", "Bundle root (default: .)")
+  .option("--description <text>", "Component description")
+  .option("--path <dir>", "Component root override; records it in the manifest")
+  .option("--activation <mode>", "Rule activation: always, files, model, manual", "always")
+  .option("--glob <glob>", "Rule glob (repeatable)", collect)
+  .option("--command <cmd>", "Command for a hook, policy prefix, or MCP server")
+  .option("--target <target>", "Overlay target, required for kind 'overlay'", collect)
+  .option("--profile <profile>", "Overlay output profile: plugin or project", "plugin")
+  .option("--force", "Replace an existing component")
+  .option("--dry-run", "Report the plan without writing")
+  .option("--check", "Report whether the component is already present and current")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nagent-bundle.yaml is edited through a comment-preserving YAML document and is\nleft byte-untouched when no manifest change is needed.\n\nExit codes:\n  0  Component added, or dry run completed\n  1  Invocation or I/O error\n  2  --check found a missing or differing component",
+  )
+  .action((kind: string, name: string, bundle: string | undefined, opts: AgentAddOptions) =>
+    agentActionBoundary("add", opts, () => agentAddAction(kind, name, bundle, opts)),
   );
 
 agent

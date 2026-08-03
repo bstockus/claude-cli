@@ -44,7 +44,16 @@ describe("agent CLI", () => {
   it("shows every subcommand", async () => {
     const result = await run("agent", "--help");
     expect(result.exitCode).toBe(0);
-    for (const command of ["convert", "validate", "inspect", "compat", "doctor", "specs"])
+    for (const command of [
+      "convert",
+      "validate",
+      "inspect",
+      "compat",
+      "doctor",
+      "specs",
+      "init",
+      "add",
+    ])
       expect(result.stdout).toContain(command);
   });
 
@@ -261,5 +270,128 @@ describe("agent CLI", () => {
         )
       ).exitCode,
     ).toBe(0);
+  });
+});
+
+describe("agent init and agent add", () => {
+  function scratch(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-scaffold-e2e-"));
+    temporary.push(root);
+    return root;
+  }
+
+  it("scaffolds a bundle that validates and converts cleanly", async () => {
+    const output = path.join(scratch(), "rh");
+    const init = await run("agent", "init", "release-helper", "--output", output);
+    expect(init.exitCode).toBe(0);
+
+    const validated = await run("agent", "validate", output, "--target", "all");
+    expect(validated.exitCode, validated.stdout).toBe(0);
+
+    const converted = await run(
+      "agent",
+      "convert",
+      output,
+      "--target",
+      "all",
+      "--output",
+      path.join(path.dirname(output), "dist"),
+    );
+    expect(converted.exitCode, converted.stdout).toBe(0);
+  });
+
+  it("writes nothing under --dry-run but still reports the plan", async () => {
+    const output = path.join(scratch(), "rh");
+    const result = await run("agent", "init", "demo", "--output", output, "--dry-run", "-fj");
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.dryRun).toBe(true);
+    expect(payload.plan.operations.every((op: { action: string }) => op.action === "create")).toBe(
+      true,
+    );
+    expect(fs.existsSync(output)).toBe(false);
+  });
+
+  it("reports a current scaffold as not stale and a missing one as stale", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output);
+    const current = await run("agent", "init", "demo", "--output", output, "--check", "-fj");
+    expect(current.exitCode).toBe(0);
+    expect(JSON.parse(current.stdout).stale).toBe(false);
+
+    fs.rmSync(path.join(output, "skills", "demo", "SKILL.md"));
+    const stale = await run("agent", "init", "demo", "--output", output, "--check", "-fj");
+    expect(stale.exitCode).toBe(2);
+    expect(JSON.parse(stale.stdout).stale).toBe(true);
+  });
+
+  it("refuses a nonempty destination without --force", async () => {
+    const output = path.join(scratch(), "rh");
+    fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(path.join(output, "keep.txt"), "mine");
+    const result = await run("agent", "init", "demo", "--output", output, "-fj");
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stdout).diagnostics[0].code).toBe("AB200");
+    expect(fs.readFileSync(path.join(output, "keep.txt"), "utf8")).toBe("mine");
+  });
+
+  it("leaves agent-bundle.yaml byte-identical when no manifest edit is needed", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output);
+    const manifest = path.join(output, "agent-bundle.yaml");
+    const before = fs.readFileSync(manifest);
+
+    const added = await run("agent", "add", "skill", "prepare-release", output);
+    expect(added.exitCode, added.stdout).toBe(0);
+    expect(fs.readFileSync(manifest).equals(before)).toBe(true);
+    expect(fs.existsSync(path.join(output, "skills", "prepare-release", "SKILL.md"))).toBe(true);
+  });
+
+  it("edits the manifest for a non-default root and keeps its comments", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output);
+    const manifest = path.join(output, "agent-bundle.yaml");
+
+    const added = await run("agent", "add", "skill", "other", output, "--path", "lib/skills");
+    expect(added.exitCode, added.stdout).toBe(0);
+    const text = fs.readFileSync(manifest, "utf8");
+    expect(text).toContain("# Portable agent bundle");
+    expect(text).toContain("skills: lib/skills");
+    expect(fs.existsSync(path.join(output, "lib", "skills", "other", "SKILL.md"))).toBe(true);
+  });
+
+  it("rejects a hook name that is not a portable event", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output);
+    const result = await run("agent", "add", "hook", "not-an-event", output, "-fj");
+    expect(result.exitCode).toBe(2);
+    expect(JSON.parse(result.stdout).diagnostics[0].code).toBe("AB202");
+  });
+
+  it("refuses to replace an existing component without --force", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output);
+    await run("agent", "add", "skill", "thing", output);
+    const again = await run("agent", "add", "skill", "thing", output, "-fj");
+    expect(again.exitCode).toBe(2);
+    expect(JSON.parse(again.stdout).diagnostics[0].code).toBe("AB201");
+  });
+
+  it("adds an overlay directory for one target", async () => {
+    const output = path.join(scratch(), "rh");
+    await run("agent", "init", "demo", "--output", output, "--overlays", "--target", "codex");
+    const added = await run(
+      "agent",
+      "add",
+      "overlay",
+      "extras",
+      output,
+      "--target",
+      "codex",
+      "--profile",
+      "plugin",
+    );
+    expect(added.exitCode, added.stdout).toBe(0);
+    expect(fs.existsSync(path.join(output, "native", "codex", "plugin"))).toBe(true);
   });
 });

@@ -257,6 +257,9 @@ Cursor artifacts. Agent-bundle defaults deliberately live in `agent-bundle.yaml`
 `.claude-cli.yml` configuration described above remains scoped to `md` commands.
 
 ```bash
+claude-cli agent init release-helper --output ./my-bundle
+claude-cli agent add skill prepare-release ./my-bundle
+claude-cli agent add hook pre-tool-use ./my-bundle
 claude-cli agent validate ./my-bundle --target all
 claude-cli agent inspect ./my-bundle --format json
 claude-cli agent compat
@@ -267,6 +270,11 @@ claude-cli agent convert ./my-bundle --target all --output ./dist --profile both
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
 claude-cli agent convert ./my-bundle --target all --output ./dist --check
 ```
+
+`agent init` scaffolds a minimal, valid `schemaVersion: '2'` bundle and `agent add` adds one
+component at a time. Both are noninteractive, support `--dry-run`/`--check`, and report a
+machine-readable plan, so an agent can drive them without parsing prompts. `agent add` leaves
+`agent-bundle.yaml` byte-untouched unless a component root actually needs recording.
 
 `--target` is repeatable and accepts `claude-code`, `codex`, `cursor`, or `all`.
 `--profile` accepts `plugin`, `project`, or `both` (the default). Existing nonempty selected

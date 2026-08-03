@@ -135,8 +135,12 @@ function parsePublisher(
     error(diagnostics, "AB122", "marketplace.publisher must be an object", path);
     return undefined;
   }
+  // An empty name is structurally valid and deliberately so: `agent init`
+  // scaffolds `name: ""` because it cannot know the publisher, and a bundle
+  // must still validate before it is ready to publish. `agent package` is what
+  // requires a real value.
   const name = optionalString(entry.name, "publisher.name", path, diagnostics);
-  if (!name) {
+  if (name === undefined) {
     error(diagnostics, "AB122", "marketplace.publisher requires a name", path);
     return undefined;
   }
