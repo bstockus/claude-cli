@@ -263,6 +263,13 @@ describe("declared output schemas match real output", () => {
       exitCode: 0,
     },
     {
+      label: "agent audit",
+      schema: "agent-result",
+      args: (c) => ["agent", "audit", c.bundle, "--target", "claude-code", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "agent convert --dry-run",
       schema: "agent-result",
       args: (c) => [

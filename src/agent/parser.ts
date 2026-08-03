@@ -64,7 +64,12 @@ function relativeSafe(root: string, candidate: string, label: string): string {
   return resolved;
 }
 
-function allFiles(directory: string): SourceFile[] {
+/**
+ * Every file under `directory`, with root-relative paths in the platform's
+ * separator. Refuses a symlink that resolves outside `directory`, which is why
+ * callers outside this module use it rather than walking the tree themselves.
+ */
+export function allFiles(directory: string): SourceFile[] {
   if (!fs.existsSync(directory)) return [];
   const root = path.resolve(directory);
   const result: SourceFile[] = [];

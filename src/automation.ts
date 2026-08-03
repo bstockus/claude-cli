@@ -1,4 +1,5 @@
 import type { Issue, OutputFormat } from "./types.js";
+import { sarifDocument } from "./sarif.js";
 
 export interface DiagnosticSummary {
   files: number;
@@ -13,39 +14,30 @@ export function formatJsonl(issues: readonly Issue[], summary: DiagnosticSummary
   ].join("\n");
 }
 
+/**
+ * SARIF for `md` diagnostics.
+ *
+ * `level` is `"error"` for every finding. That is the current published
+ * contract for these commands, not an oversight — `Issue` carries no severity,
+ * so changing it would be a breaking change for consumers gating on it.
+ */
 export function formatSarif(issues: readonly Issue[]): string {
   const ids = [...new Set(issues.map((issue) => issue.checker))].sort();
-  return JSON.stringify(
-    {
-      version: "2.1.0",
-      $schema: "https://json.schemastore.org/sarif-2.1.0.json",
-      runs: [
+  return sarifDocument(
+    ids.map((id) => ({ id, name: id })),
+    issues.map((issue) => ({
+      ruleId: issue.checker,
+      level: "error" as const,
+      message: { text: issue.message },
+      locations: [
         {
-          tool: {
-            driver: {
-              name: "claude-cli",
-              informationUri: "https://github.com/bstockus/claude-cli",
-              rules: ids.map((id) => ({ id, name: id })),
-            },
+          physicalLocation: {
+            artifactLocation: { uri: issue.file },
+            region: { startLine: Math.max(1, issue.line) },
           },
-          results: issues.map((issue) => ({
-            ruleId: issue.checker,
-            level: "error",
-            message: { text: issue.message },
-            locations: [
-              {
-                physicalLocation: {
-                  artifactLocation: { uri: issue.file },
-                  region: { startLine: Math.max(1, issue.line) },
-                },
-              },
-            ],
-          })),
         },
       ],
-    },
-    null,
-    2,
+    })),
   );
 }
 

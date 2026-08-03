@@ -28,4 +28,56 @@ describe("automation formats", () => {
     expect(sarif.runs[0].results[0].ruleId).toBe("ref/link");
     expect(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine).toBe(3);
   });
+
+  // Byte equality, not field spot-checks: `formatSarif` now shares its envelope
+  // with `agent audit` through `sarifDocument`, and `JSON.stringify` follows
+  // insertion order, so a reordered key would silently change what every
+  // consumer of `md lint --format sarif` receives.
+  it("emits byte-identical SARIF for a fixed input", () => {
+    expect(formatSarif([issue])).toBe(
+      [
+        "{",
+        '  "version": "2.1.0",',
+        '  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",',
+        '  "runs": [',
+        "    {",
+        '      "tool": {',
+        '        "driver": {',
+        '          "name": "claude-cli",',
+        '          "informationUri": "https://github.com/bstockus/claude-cli",',
+        '          "rules": [',
+        "            {",
+        '              "id": "ref/link",',
+        '              "name": "ref/link"',
+        "            }",
+        "          ]",
+        "        }",
+        "      },",
+        '      "results": [',
+        "        {",
+        '          "ruleId": "ref/link",',
+        '          "level": "error",',
+        '          "message": {',
+        '            "text": "missing"',
+        "          },",
+        '          "locations": [',
+        "            {",
+        '              "physicalLocation": {',
+        '                "artifactLocation": {',
+        '                  "uri": "docs/a.md"',
+        "                },",
+        '                "region": {',
+        '                  "startLine": 3',
+        "                }",
+        "              }",
+        "            }",
+        "          ]",
+        "        }",
+        "      ]",
+        "    }",
+        "  ]",
+        "}",
+      ].join("\n"),
+    );
+  });
 });

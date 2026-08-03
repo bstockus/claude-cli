@@ -116,6 +116,26 @@ in `src/contract/schemas/agent.ts`.
   `validate` and wrong for `doctor`, `import`, `upgrade`, and `package`, where approximation is
   the expected outcome rather than a defect. Those four call `outputDecidedResult` with their own
   error/strict rule. A new command that reports approximations should do the same.
+- **`agent audit`'s exit rule is split by origin, not just by severity.** Almost every review
+  finding is a `warning` by design, so blocking on errors alone would let a bundle embedding a
+  literal credential exit `0`. But audit forwards render diagnostics, and every Codex bundle
+  carries approximate warnings. So a warning whose code is in `AUDIT_CODES` blocks; a forwarded
+  one blocks only under `--strict`. Adding a check means adding its code to `SOURCE_CHECKS`,
+  `RENDERED_CHECKS`, or `BASELINE_CHECKS`, or it will neither gate CI nor appear in
+  `audit.checks` — which is what tells a consumer "clean" from "not checked".
+- **Audit re-emits `AB504`, `AB505`, and `AB506` rather than minting its own codes.** One
+  condition keeps one ID whichever command surfaces it, or a consumer's suppression list breaks.
+  It calls the packager's exported checks over a _bundle-root-relative_ inventory
+  (`buildSourceInventory`): `bundle.hookFiles` paths are relative to the hook directory, so
+  passing them straight through would miss `checkExecutables`' `hooks/` prefix and flag every
+  scaffolded hook script. `agent init` output auditing clean is a guarded constraint.
+- **`src/sarif.ts` builds its document in a load-bearing key order.** The five `md` diagnostic
+  commands share `sarifDocument` with `agent audit`, and `JSON.stringify` follows insertion
+  order, so reordering a key silently changes bytes every existing SARIF consumer receives.
+  `tests/unit/automation.test.ts` asserts byte equality against a fixed input. `formatSarif`'s
+  hardcoded `level: "error"` is contract too, not an oversight: an `Issue` carries no severity.
+  The agent mapper lives separately in `src/agent/sarif.ts` because it needs three levels, no
+  `region`, and `properties` — and because agent SARIF goes to stdout, not stderr.
 - **Sort generated output by byte comparison, never `localeCompare`.** It is ICU-build and
   locale dependent, so a differently configured CI runner would reorder archives and manifests.
   `render.ts:897` still uses `localeCompare`; leave it (changing it would move

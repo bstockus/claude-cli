@@ -298,7 +298,12 @@ export function buildChecksums(payload: Artifact[]): Artifact {
   return { path: CHECKSUMS, content: Buffer.from(lines.join("\n") + "\n"), mode: 0o644 };
 }
 
-function classify(artifact: Artifact): string {
+/**
+ * Content-derived file type, as recorded in `sbom.json`. Exported because
+ * `agent audit --baseline` reads that `type` field back and must classify the
+ * current side by the same rule.
+ */
+export function classify(artifact: Artifact): string {
   if ((artifact.mode & 0o111) !== 0)
     return artifact.content.subarray(0, 2).toString("utf8") === "#!" ? "script" : "executable";
   if (artifact.content.includes(0)) return "binary";

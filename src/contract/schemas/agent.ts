@@ -21,6 +21,7 @@ export const agentResultSchema: SchemaEntry = {
     "agent upgrade",
     "agent import",
     "agent package",
+    "agent audit",
   ],
   schema: {
     $schema: DRAFT,
@@ -44,6 +45,7 @@ export const agentResultSchema: SchemaEntry = {
           "upgrade",
           "import",
           "package",
+          "audit",
         ],
       },
       ok: { type: "boolean" },
@@ -145,6 +147,123 @@ export const agentResultSchema: SchemaEntry = {
               passed: { type: "integer", minimum: 0 },
               failed: { type: "integer", minimum: 0 },
             },
+          },
+        },
+      },
+      audit: {
+        description: "Review surface and findings summary, emitted by `agent audit`.",
+        type: "object",
+        required: ["checks", "counts", "surface", "executables", "commands", "limitations"],
+        properties: {
+          checks: {
+            description:
+              "Diagnostic codes this run evaluated. The rendered checks require --target and the drift checks require --baseline, so this is what distinguishes 'clean' from 'not checked'.",
+            ...stringArray,
+          },
+          counts: {
+            type: "object",
+            required: ["error", "warning", "notice"],
+            properties: {
+              error: { type: "integer", minimum: 0 },
+              warning: { type: "integer", minimum: 0 },
+              notice: { type: "integer", minimum: 0 },
+            },
+          },
+          surface: {
+            description: "What the bundle carries, whether or not anything was found.",
+            type: "object",
+            required: [
+              "hooks",
+              "mcpServers",
+              "policies",
+              "files",
+              "executables",
+              "symlinks",
+              "binaries",
+              "bytes",
+            ],
+            properties: {
+              hooks: { type: "integer", minimum: 0 },
+              mcpServers: { type: "integer", minimum: 0 },
+              policies: { type: "integer", minimum: 0 },
+              files: { type: "integer", minimum: 0 },
+              executables: { type: "integer", minimum: 0 },
+              symlinks: { type: "integer", minimum: 0 },
+              binaries: { type: "integer", minimum: 0 },
+              bytes: { type: "integer", minimum: 0 },
+            },
+          },
+          executables: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["path", "mode", "sha256", "kind"],
+              properties: {
+                path: { type: "string" },
+                mode: { type: "string", description: "Octal file mode, e.g. '0755'." },
+                sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+                kind: {
+                  type: "string",
+                  description: "Content-derived type, using the sbom.json vocabulary.",
+                },
+              },
+            },
+          },
+          commands: {
+            description: "Every command a hook or MCP server would cause a host to run.",
+            type: "array",
+            items: {
+              type: "object",
+              required: ["origin", "name", "command"],
+              properties: {
+                origin: { enum: ["hook", "mcp"] },
+                name: { type: "string", description: "Hook event, or MCP server name." },
+                command: { type: "string" },
+                args: stringArray,
+                target: {
+                  enum: TARGETS,
+                  description: "Present when the command came from a targets.<target> override.",
+                },
+                path: { type: "string" },
+              },
+            },
+          },
+          baseline: {
+            description: "Present only when --baseline was given.",
+            type: "object",
+            required: ["path", "compared", "added", "removed", "changed", "modeChanged"],
+            properties: {
+              path: { type: "string" },
+              subject: {
+                type: ["object", "null"],
+                properties: { name: { type: "string" }, version: { type: "string" } },
+              },
+              generator: {
+                type: ["object", "null"],
+                properties: { name: { type: "string" }, version: { type: "string" } },
+              },
+              compared: { type: "integer", minimum: 0 },
+              added: stringArray,
+              removed: stringArray,
+              changed: stringArray,
+              modeChanged: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["path", "from", "to"],
+                  properties: {
+                    path: { type: "string" },
+                    from: { type: "string" },
+                    to: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          limitations: {
+            description:
+              "What this command does not do. Carried as data rather than as a permanent notice, which would pollute every consumer's diagnostics and every --strict run.",
+            ...stringArray,
           },
         },
       },

@@ -3,8 +3,13 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormatsImport from "ajv-formats";
 import { SCHEMAS, SCHEMA_BY_ID, schemaUriFor } from "../../src/contract/schemas/index.js";
 import { COMMAND_CONTRACTS } from "../../src/contract/registry.js";
-import { CONTRACT_VERSION, SCHEMA_BASE, schemaUri } from "../../src/contract/version.js";
-import { ALL_FORMATS, formatsFor } from "../../src/formats.js";
+import {
+  CONTRACT_VERSION,
+  SARIF_SCHEMA_URI,
+  SCHEMA_BASE,
+  schemaUri,
+} from "../../src/contract/version.js";
+import { ALL_FORMATS, agentFormatsFor, formatsFor } from "../../src/formats.js";
 
 const addFormats = addFormatsImport as unknown as (instance: Ajv2020) => Ajv2020;
 
@@ -112,6 +117,13 @@ describe("command contract registry", () => {
     }
   });
 
+  it("matches the formats each agent command actually accepts", () => {
+    for (const contract of entries) {
+      if (!contract.id.startsWith("agent ")) continue;
+      expect(contract.formats, contract.id).toEqual(agentFormatsFor(contract.id.slice(6)));
+    }
+  });
+
   it("only names published schemas", () => {
     for (const contract of entries)
       for (const id of [contract.outputSchema, contract.jsonlSchema])
@@ -131,6 +143,11 @@ describe("command contract registry", () => {
       if (contract.formats.includes("jsonl"))
         expect(contract.jsonlSchema, contract.id).toBeTruthy();
       if (contract.jsonlSchema) expect(contract.formats, contract.id).toContain("jsonl");
+      // SARIF is an external standard, so the contract names a URI rather than
+      // a published schema id — but the two must still agree in both directions.
+      if (contract.formats.includes("sarif"))
+        expect(contract.sarifSchema, contract.id).toBe(SARIF_SCHEMA_URI);
+      if (contract.sarifSchema) expect(contract.formats, contract.id).toContain("sarif");
     }
   });
 });

@@ -26,3 +26,16 @@ export function supportsDiagnosticFormats(mdCommand: string): boolean {
 export function formatsFor(mdCommand: string): readonly OutputFormat[] {
   return supportsDiagnosticFormats(mdCommand) ? ALL_FORMATS : BASE_FORMATS;
 }
+
+/**
+ * `agent` subcommands that additionally accept SARIF.
+ *
+ * Deliberately not `ALL_FORMATS`: `jsonl`'s published `diagnostic-record`
+ * schema is the `Issue` shape, which an `AgentDiagnostic` does not fit.
+ */
+export const AGENT_SARIF_COMMANDS: readonly string[] = ["audit"];
+
+/** Formats accepted by `agent <agentCommand>`. */
+export function agentFormatsFor(agentCommand: string): readonly OutputFormat[] {
+  return AGENT_SARIF_COMMANDS.includes(agentCommand) ? [...BASE_FORMATS, "sarif"] : BASE_FORMATS;
+}

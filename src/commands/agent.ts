@@ -11,6 +11,10 @@ import type {
   Artifact,
   DoctorReport,
 } from "../agent/types.js";
+import type { AuditReport } from "../agent/audit/index.js";
+import { formatAgentSarif } from "../agent/sarif.js";
+import { agentFormatsFor } from "../formats.js";
+import type { OutputFormat } from "../types.js";
 import { TARGETS } from "../agent/types.js";
 import type { SpecsPayload } from "../agent/targets/index.js";
 import {
@@ -142,10 +146,44 @@ function formatDoctor(doctor: DoctorReport): string[] {
   return lines;
 }
 
+/**
+ * Renders the review surface. The findings themselves are the diagnostics, so
+ * this reports what was inspected — which is what makes "no findings" mean
+ * something.
+ */
+function formatAudit(audit: AuditReport): string[] {
+  const { surface } = audit;
+  const lines = [
+    `checks: ${audit.checks.length}  errors: ${audit.counts.error}  warnings: ${audit.counts.warning}  notices: ${audit.counts.notice}`,
+    `surface: ${surface.files} files (${surface.bytes} bytes), ${surface.executables} executable, ` +
+      `${surface.binaries} binary, ${surface.symlinks} symlink`,
+    `declared: hook commands ${surface.hooks}, MCP servers ${surface.mcpServers}, policy files ${surface.policies}`,
+  ];
+  if (audit.commands.length) {
+    lines.push("", "commands:");
+    for (const item of audit.commands)
+      lines.push(
+        `  ${item.origin}/${item.name}${item.target ? ` (${item.target})` : ""}: ${[item.command, ...(item.args ?? [])].join(" ")}`,
+      );
+  }
+  if (audit.baseline) {
+    const { compared, added, removed, changed, modeChanged } = audit.baseline;
+    lines.push(
+      "",
+      `baseline: ${audit.baseline.path}`,
+      `  compared: ${compared}  added: ${added.length}  removed: ${removed.length}  changed: ${changed.length}  mode: ${modeChanged.length}`,
+    );
+  }
+  return [...lines, "", ...audit.limitations.map((item) => `note: ${item}`)];
+}
+
 function formatResult(result: AgentResult, opts: AgentOptions): string {
   const format = opts.format;
-  if (format && !["llm", "human", "json"].includes(format))
+  // Keyed off the command so the message stays byte-identical for the
+  // subcommands that accept only the base formats.
+  if (format && !agentFormatsFor(result.command).includes(format as OutputFormat))
     throw new Error(`Invalid output format: ${format}`);
+  if (format === "sarif") return formatAgentSarif(result.diagnostics, result.source);
   if (format === "json")
     return jsonPayload(`agent ${result.command}`, result, opts, {
       ok: result.ok,
@@ -162,6 +200,7 @@ function formatResult(result: AgentResult, opts: AgentOptions): string {
   if (result.compatibility) lines.push("", JSON.stringify(result.compatibility, null, 2));
   if (result.specs) lines.push("", ...formatSpecs(result.specs as SpecsPayload));
   if (result.doctor) lines.push("", ...formatDoctor(result.doctor));
+  if (result.audit) lines.push("", ...formatAudit(result.audit));
   if (result.diagnostics.length) {
     lines.push("", "diagnostics:");
     for (const item of result.diagnostics) {

@@ -270,6 +270,7 @@ claude-cli agent specs --format json
 claude-cli agent doctor ./my-bundle --target all --output ./dist
 claude-cli agent convert ./my-bundle --target all --output ./dist --profile both
 claude-cli agent package ./my-bundle --target all --output ./release --archive
+claude-cli agent audit ./my-bundle --target all --format sarif
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
 claude-cli agent convert ./my-bundle --target all --output ./dist --check
 ```
@@ -295,6 +296,14 @@ It renders the bundle itself — so a package can never certify a stale tree —
 marketplace catalogs, `sha256sum`-compatible checksums, a file inventory, and optional
 byte-reproducible `.tar.gz` archives, with publish-readiness checks over all of it. It never
 contacts the network and never publishes.
+
+`agent audit` answers the question validation does not: what should a reviewer inspect before
+trusting or distributing this bundle? It reports the commands its hooks and MCP servers would
+run, the credentials and environment they are handed, how broad its permission grants are,
+what executables and binaries it carries, and — against a previous package's `sbom.json` —
+what changed since the last release. It is explainable static analysis with stable diagnostic
+IDs and SARIF output, not a sandbox or a malware detector: nothing is executed, and exit `2`
+means there are findings to review, never that a bundle is malicious.
 
 Target behavior is described by versioned conformance profiles that the renderer itself
 reads, so what `agent specs` publishes cannot drift from what `agent convert` produces.

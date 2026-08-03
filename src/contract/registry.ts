@@ -1,4 +1,4 @@
-import { BASE_FORMATS, formatsFor } from "../formats.js";
+import { BASE_FORMATS, agentFormatsFor, formatsFor } from "../formats.js";
 import { SARIF_SCHEMA_URI } from "./version.js";
 import type { CommandContract, ExitCodeMeaning } from "./types.js";
 
@@ -45,7 +45,7 @@ function diagnostic(
 function agentCommand(name: string, extra: Partial<CommandContract> = {}): CommandContract {
   return {
     id: `agent ${name}`,
-    formats: BASE_FORMATS,
+    formats: agentFormatsFor(name),
     defaultFormat: "llm",
     formatConfigurable: false,
     outputSchema: "agent-result",
@@ -190,6 +190,13 @@ const CONTRACTS: CommandContract[] = [
     ],
     notes:
       "Renders the bundle itself rather than trusting an existing tree; --from-dist only verifies one. Never contacts the network and never publishes. The package root is not an agent convert output root, so agent doctor --output must not be pointed at it.",
+  }),
+  agentCommand("audit", {
+    stability: "experimental",
+    sarifSchema: SARIF_SCHEMA_URI,
+    exitCodes: [OK("No blocking review findings"), USAGE, FINDINGS("Review findings")],
+    notes:
+      "All output goes to stdout, including the SARIF form and the failure result for an invocation error — unlike the md diagnostic commands, which route findings to stderr. The pass/fail rule is split by origin: a warning audit itself found is blocking, because almost every review finding is a warning by design, while a forwarded parse or render warning is not unless --strict says so. Exit 2 means findings to review, not proof that a bundle is malicious. --format sarif has no agent-result payload, so an invocation error under it prints plainly and exits 1.",
   }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],

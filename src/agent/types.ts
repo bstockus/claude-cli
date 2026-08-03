@@ -2,6 +2,7 @@ import type { BundleMarketplace } from "./manifest.js";
 import type { UpgradeReport } from "./upgrade.js";
 import type { ImportReport } from "./import/normalize.js";
 import type { PackageReport } from "./package/index.js";
+import type { AuditReport } from "./audit/index.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -165,7 +166,8 @@ export interface AgentResult {
     | "add"
     | "upgrade"
     | "import"
-    | "package";
+    | "package"
+    | "audit";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -186,6 +188,8 @@ export interface AgentResult {
   import?: ImportReport;
   /** Packaging result, emitted by `agent package`. */
   package?: PackageReport;
+  /** Review surface and findings summary, emitted by `agent audit`. */
+  audit?: AuditReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

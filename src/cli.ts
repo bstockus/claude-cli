@@ -48,6 +48,7 @@ import { agentAddAction, agentInitAction } from "./commands/agent-scaffold.js";
 import { agentUpgradeAction } from "./commands/agent-upgrade.js";
 import { agentImportAction } from "./commands/agent-import.js";
 import { agentPackageAction } from "./commands/agent-package.js";
+import { agentAuditAction } from "./commands/agent-audit.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -316,6 +317,24 @@ agent
   )
   .action((source: string, opts: Parameters<typeof agentPackageAction>[1]) =>
     agentActionBoundary("package", opts, () => agentPackageAction(source, opts)),
+  );
+
+agent
+  .command("audit")
+  .description("Review a bundle's executable surface, permissions, and supply chain")
+  .argument("<source>", "Bundle root")
+  .option("--target <target>", "Target (repeatable, or all); enables the rendered checks", collect)
+  .option("--profile <profile>", "Output profile: plugin, project, both", "both")
+  .option("--baseline <file>", "Compare executables against a previous package sbom.json")
+  .option("--strict", "Treat warnings as blocking findings")
+  .option("--format <fmt>", "Output format: llm, human, json, sarif", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nExplainable static analysis: nothing is executed and no network request is\nmade. Exit 2 means findings to review, not proof that a bundle is malicious.\n\nExit codes:\n  0  No blocking review findings\n  1  Invocation or I/O error\n  2  Review findings",
+  )
+  .action((source: string, opts: Parameters<typeof agentAuditAction>[1]) =>
+    agentActionBoundary("audit", opts, () => agentAuditAction(source, opts)),
   );
 
 agent

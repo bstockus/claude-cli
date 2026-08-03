@@ -681,7 +681,8 @@ function renderRules(
   }
 }
 
-function policyEntries(bundle: AgentBundle): Record<string, unknown>[] {
+/** The bundle's policy rules, flattened. One definition of "what a rule is". */
+export function policyEntries(bundle: AgentBundle): Record<string, unknown>[] {
   return bundle.policies.flatMap((policy) => {
     const value = policy.value.rules ?? policy.value.policies;
     return Array.isArray(value)
