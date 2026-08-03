@@ -501,6 +501,90 @@ export const mdCheckUrlsSchema: SchemaEntry = {
   },
 };
 
+export const mdCheckSnippetsSchema: SchemaEntry = {
+  id: "md-check-snippets",
+  uri: schemaUri("v1", "md-check-snippets"),
+  title: "Snippet check report",
+  commands: ["md check-snippets"],
+  schema: {
+    $schema: DRAFT,
+    $id: schemaUri("v1", "md-check-snippets"),
+    title: "Snippet check report",
+    description:
+      "Emitted by `md check-snippets --format json`. Counts and findings describe only fences whose info string carries a claude-cli:snippet= attribute; every other fence is absent.",
+    type: "object",
+    required: [
+      "mode",
+      "filesScanned",
+      "linked",
+      "current",
+      "drift",
+      "unresolved",
+      "malformed",
+      "unwritable",
+      "applied",
+      "findings",
+      "conflicts",
+    ],
+    properties: {
+      mode: { type: "string", enum: ["check", "dry-run", "write"] },
+      filesScanned: { type: "integer", minimum: 0 },
+      linked: { type: "integer", minimum: 0 },
+      current: { type: "integer", minimum: 0 },
+      drift: { type: "integer", minimum: 0 },
+      unresolved: { type: "integer", minimum: 0 },
+      malformed: { type: "integer", minimum: 0 },
+      unwritable: {
+        type: "integer",
+        minimum: 0,
+        description: "Stale blocks whose fence cannot be rewritten. Always 0 under --check.",
+      },
+      applied: {
+        type: "integer",
+        minimum: 0,
+        description: "Files whose bytes changed. Always 0 outside --write.",
+      },
+      findings: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["file", "line", "endLine", "status"],
+          properties: {
+            file: { type: "string" },
+            line: { type: "integer", minimum: 0 },
+            endLine: { type: "integer", minimum: 0 },
+            status: { type: "string", enum: ["current", "stale", "unresolved", "malformed"] },
+            target: {
+              type: "string",
+              description: "The attribute value as written. Absent when it could not be parsed.",
+            },
+            source: { type: "string" },
+            reason: { type: "string" },
+            message: { type: "string" },
+            documented: { type: "string", description: "--dry-run only." },
+            expected: { type: "string", description: "--dry-run only." },
+            writable: { type: "boolean", description: "Stale blocks outside --check." },
+            applied: { type: "boolean", description: "--write only." },
+          },
+        },
+      },
+      conflicts: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["kind", "file", "message", "rules"],
+          properties: {
+            kind: { type: "string" },
+            file: { type: "string" },
+            message: { type: "string" },
+            rules: stringArray,
+          },
+        },
+      },
+    },
+  },
+};
+
 export const mdOrphansSchema: SchemaEntry = {
   id: "md-orphans",
   uri: schemaUri("v1", "md-orphans"),

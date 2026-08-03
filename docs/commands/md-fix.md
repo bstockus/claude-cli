@@ -22,18 +22,18 @@ Stdin is rejected because `md fix` writes and stdin has no path to write back to
 
 ## Options
 
-| Option                  | Default         | Description                              |
-| ----------------------- | --------------- | ---------------------------------------- |
-| `--format <fmt>`        | Project default | `llm`, `human`, or `json`.               |
-| `--paths <style>`       | Project default | `absolute` or `relative`.                |
-| `--rule <name>`         | Every fixer     | Fixer to run. Repeatable.                |
-| `--check`               | **Default**     | Report pending fixes without writing.    |
-| `--dry-run`             | Off             | Print the full plan without writing.     |
-| `--write`               | Off             | Apply the plan as one transaction.       |
-| `--include <glob>`      | `files.include` | Repeatable include glob.                 |
-| `--exclude <glob>`      | `files.exclude` | Repeatable exclude glob.                 |
-| `--changed-since <rev>` | None            | Only files changed since a Git revision. |
-| `-h`, `--help`          | —               | Show help.                               |
+| Option                  | Default             | Description                              |
+| ----------------------- | ------------------- | ---------------------------------------- |
+| `--format <fmt>`        | Project default     | `llm`, `human`, or `json`.               |
+| `--paths <style>`       | Project default     | `absolute` or `relative`.                |
+| `--rule <name>`         | Every default fixer | Fixer to run. Repeatable.                |
+| `--check`               | **Default**         | Report pending fixes without writing.    |
+| `--dry-run`             | Off                 | Print the full plan without writing.     |
+| `--write`               | Off                 | Apply the plan as one transaction.       |
+| `--include <glob>`      | `files.include`     | Repeatable include glob.                 |
+| `--exclude <glob>`      | `files.exclude`     | Repeatable exclude glob.                 |
+| `--changed-since <rev>` | None                | Only files changed since a Git revision. |
+| `-h`, `--help`          | —                   | Show help.                               |
 
 `--check`, `--dry-run`, and `--write` are mutually exclusive. **The mode cannot be set from
 project configuration**: `check`, `write`, and `dryRun` are deliberately absent from
@@ -42,11 +42,29 @@ Setting one is a configuration error.
 
 ## Fixers
 
-| Rule             | What it does                                                               |
-| ---------------- | -------------------------------------------------------------------------- |
-| `markdownlint`   | Applies markdownlint's own fix for a fixed allowlist of unambiguous rules. |
-| `relative-links` | Normalizes a local link's path without changing what it points at.         |
-| `toc`            | Replaces the content between an existing `claude-cli:toc` marker pair.     |
+| Rule             | Default | What it does                                                               |
+| ---------------- | ------- | -------------------------------------------------------------------------- |
+| `markdownlint`   | Yes     | Applies markdownlint's own fix for a fixed allowlist of unambiguous rules. |
+| `relative-links` | Yes     | Normalizes a local link's path without changing what it points at.         |
+| `toc`            | Yes     | Replaces the content between an existing `claude-cli:toc` marker pair.     |
+| `snippets`       | **No**  | Refreshes a fenced block from the source region its info string declares.  |
+
+A rule that is not a default runs only when named with `--rule`. `snippets` is the only one
+today, because it is the only fixer whose edits are decided by files other than the Markdown
+being fixed — a broadly-run `md fix --write` must not silently acquire the reach to read
+arbitrary source files.
+
+### `snippets`
+
+Refreshes fences carrying a `claude-cli:snippet=<path>[#<region>]` attribute, and nothing else.
+The syntax, the comparison rule, and the cases where a fence cannot accept its refreshed body
+are documented on the [`md check-snippets`](md-check-snippets.md) page, which shares this
+engine and reports the same conditions with its own exit rule.
+
+Drift with a usable write plan becomes an edit. Everything else — a missing source file, a
+missing region, a malformed attribute, a fence the body would break out of — is reported under
+`unfixable`, so one bad link cannot kill a whole-tree run. Note that `unfixable` entries never
+change `md fix`'s exit code, while `md check-snippets` fails on exactly those conditions.
 
 ### `toc`
 

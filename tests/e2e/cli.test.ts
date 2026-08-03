@@ -1957,6 +1957,196 @@ describe("md fix", () => {
   });
 });
 
+describe("md check-snippets", () => {
+  const SOURCE =
+    "// claude-cli:snippet:start greet\nexport function greet() {\n  return 1;\n}\n// claude-cli:snippet:end greet\n";
+  const CURRENT =
+    "# Doc\n\n```js claude-cli:snippet=src/a.js#greet\nexport function greet() {\n  return 1;\n}\n```\n";
+  const STALE = "# Doc\n\n```js claude-cli:snippet=src/a.js#greet\nold body\n```\n";
+
+  async function inWorkspace(
+    doc: string,
+    body: (dir: string) => Promise<void>,
+    source = SOURCE,
+  ): Promise<void> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "check-snippets-e2e-"));
+    try {
+      fs.mkdirSync(path.join(dir, "src"));
+      fs.writeFileSync(path.join(dir, "src", "a.js"), source);
+      fs.writeFileSync(path.join(dir, "doc.md"), doc);
+      await body(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("exits 0 and counts the link when the snippet matches", async () => {
+    await inWorkspace(CURRENT, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "-fj", "--include-ok");
+      expect(result.exitCode).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      expect(payload.mode).toBe("check");
+      expect(payload).toMatchObject({ linked: 1, current: 1, drift: 0, unresolved: 0 });
+      expect(payload.findings[0]).toMatchObject({
+        status: "current",
+        target: "src/a.js#greet",
+      });
+    });
+  });
+
+  it("ignores a fence with no snippet attribute", async () => {
+    await inWorkspace("# Doc\n\n```js\nanything\n```\n", async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "-fj", "--include-ok");
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({ linked: 0, findings: [] });
+    });
+  });
+
+  it("reports drift on stderr with exit 2 and writes nothing", async () => {
+    await inWorkspace(STALE, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "-fj");
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+      const payload = JSON.parse(result.stderr);
+      expect(payload).toMatchObject({ drift: 1, applied: 0 });
+      expect(payload.findings[0]).toMatchObject({ status: "stale", line: 3 });
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("--write refreshes the block, and a re-check is clean", async () => {
+    await inWorkspace(STALE, async (dir) => {
+      const write = await runCliIn(dir, "md", "check-snippets", "doc.md", "--write", "-fj");
+      expect(write.exitCode).toBe(0);
+      expect(JSON.parse(write.stdout)).toMatchObject({ applied: 1 });
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(CURRENT);
+      // Idempotence is the whole reason the writer emits the comparison form.
+      const again = await runCliIn(dir, "md", "check-snippets", "doc.md");
+      expect(again.exitCode).toBe(0);
+    });
+  });
+
+  it("--dry-run reports both bodies without writing", async () => {
+    await inWorkspace(STALE, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "--dry-run", "-fj");
+      expect(result.exitCode).toBe(2);
+      const finding = JSON.parse(result.stderr).findings[0];
+      expect(finding.documented).toBe("old body");
+      expect(finding.expected).toBe("export function greet() {\n  return 1;\n}");
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("fails --write on a missing source, because there is no fix to apply", async () => {
+    const doc = "# Doc\n\n```js claude-cli:snippet=src/gone.js#greet\nx\n```\n";
+    await inWorkspace(doc, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "--write", "-fj");
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr).findings[0]).toMatchObject({
+        status: "unresolved",
+        reason: "source-not-found",
+        message: "Source file not found: src/gone.js",
+      });
+    });
+  });
+
+  it("reports a missing region", async () => {
+    const doc = "# Doc\n\n```js claude-cli:snippet=src/a.js#nope\nx\n```\n";
+    await inWorkspace(doc, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "-fj");
+      expect(result.exitCode).toBe(2);
+      expect(JSON.parse(result.stderr).findings[0]).toMatchObject({
+        status: "unresolved",
+        reason: "region-missing",
+      });
+    });
+  });
+
+  it("refuses a source reached by a symlink out of the workspace root", async () => {
+    // --write copies a source into a tracked file, so an escape here is a
+    // content-exfiltration primitive rather than a nuisance.
+    const doc = "# Doc\n\n```text claude-cli:snippet=escape.txt\nx\n```\n";
+    await inWorkspace(doc, async (dir) => {
+      const secret = path.join(dir, "..", `${path.basename(dir)}-outside.txt`);
+      fs.writeFileSync(secret, "SECRET\n");
+      try {
+        fs.symlinkSync(secret, path.join(dir, "escape.txt"));
+        const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "-fj");
+        expect(result.exitCode).toBe(2);
+        expect(JSON.parse(result.stderr).findings[0]).toMatchObject({
+          status: "unresolved",
+          reason: "source-outside-root",
+        });
+        expect(result.stderr).not.toContain("SECRET");
+      } finally {
+        fs.rmSync(secret, { force: true });
+      }
+    });
+  });
+
+  it("refuses a blockquoted fence but still refreshes the rest of the document", async () => {
+    const doc =
+      "# Doc\n\n> ```js claude-cli:snippet=src/a.js#greet\n> x\n> ```\n\n" +
+      "```js claude-cli:snippet=src/a.js#greet\nx\n```\n";
+    await inWorkspace(doc, async (dir) => {
+      const result = await runCliIn(dir, "md", "check-snippets", "doc.md", "--write", "-fj");
+      expect(result.exitCode).toBe(2);
+      const payload = JSON.parse(result.stderr);
+      expect(payload).toMatchObject({ drift: 2, unwritable: 1, applied: 1 });
+      const written = fs.readFileSync(path.join(dir, "doc.md"), "utf-8");
+      expect(written).toContain("> x");
+      expect(written).toContain("```js claude-cli:snippet=src/a.js#greet\nexport function greet");
+    });
+  });
+
+  it("rejects two modes and stdin", async () => {
+    await inWorkspace(CURRENT, async (dir) => {
+      const modes = await runCliIn(dir, "md", "check-snippets", "doc.md", "--check", "--write");
+      expect(modes.exitCode).toBe(1);
+      expect(modes.stderr).toMatch(/cannot be used together/);
+      const stdin = await runCliIn(dir, "md", "check-snippets", "-");
+      expect(stdin.exitCode).toBe(1);
+      expect(stdin.stderr).toMatch(/does not accept stdin/);
+    });
+  });
+
+  it("is reachable from md fix only when named, and from md audit by default", async () => {
+    await inWorkspace(STALE, async (dir) => {
+      const bare = await runCliIn(dir, "md", "fix", "doc.md", "-fj");
+      expect(bare.exitCode).toBe(0);
+      expect(JSON.parse(bare.stdout).rules).toEqual(["markdownlint", "relative-links", "toc"]);
+
+      const named = await runCliIn(dir, "md", "fix", "doc.md", "--rule", "snippets", "-fj");
+      expect(named.exitCode).toBe(2);
+      expect(JSON.parse(named.stderr).edits).toBe(1);
+
+      const audit = await runCliIn(dir, "md", "audit", ".", "-fj");
+      expect(audit.exitCode).toBe(2);
+      const payload = JSON.parse(audit.stderr);
+      expect(payload.enabled).toContain("snippets");
+      expect(payload.totals.byCheck.snippets).toBe(1);
+      expect(payload.findings[0]).toMatchObject({
+        checker: "snippets/drift",
+        message: "Snippet is out of date with src/a.js#greet",
+      });
+
+      const off = await runCliIn(dir, "md", "audit", ".", "--no-snippets", "-fj");
+      expect(off.exitCode).toBe(0);
+      expect(JSON.parse(off.stdout).skipped).toContain("snippets");
+    });
+  });
+
+  it("finds no drift in this repository's own documentation", async () => {
+    // Catches three regressions at once: the docs' own examples going live, a
+    // phantom region picked up from a fenced example, and any change from
+    // reading `Code.meta` back to scanning the raw document.
+    const repoRoot = path.join(__dirname, "..", "..");
+    const result = await runCliIn(repoRoot, "md", "check-snippets", "docs", "README.md");
+    expect(result.stderr).toBe("");
+    expect(result.exitCode).toBe(0);
+  });
+});
+
 describe("md rename-heading transaction", () => {
   it("updates every file and leaves no staging file behind", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rename-heading-tx-"));

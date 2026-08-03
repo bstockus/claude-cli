@@ -62,6 +62,7 @@ The `md` parent accepts `--config <file>` to select a `.claude-cli.yml` file and
 | [`md tasks <file>`](commands/md-tasks.md)                                               | Extract GFM task-list items and completion totals.                                |
 | [`md tables <file>`](commands/md-tables.md)                                             | List or extract GFM tables.                                                       |
 | [`md check-urls <inputs...>`](commands/md-check-urls.md)                                | Validate deduplicated external URLs across selected inputs.                       |
+| [`md check-snippets [inputs...]`](commands/md-check-snippets.md)                        | Compare fenced code blocks against the source regions they declare.               |
 | [`md orphans [directory]`](commands/md-orphans.md)                                      | Find unreferenced Markdown files.                                                 |
 | [`md query <kind> [directory]`](commands/md-query.md)                                   | Run a workspace query, by shortcut kind or composable predicates.                 |
 | [`md index <action> [directory]`](commands/md-index.md)                                 | Inspect, build, or clear the persistent workspace index.                          |

@@ -276,6 +276,21 @@ const CONTRACTS: CommandContract[] = [
     ...AUTOMATION,
     notes: "The `file` key is present only when exactly one input file was checked.",
   }),
+  diagnostic("check-snippets", "Snippet drift, or a link that could not be resolved", {
+    outputSchema: "md-check-snippets",
+    // Only --write writes, and only to the linked blocks it can rewrite.
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Every linked snippet matches its source, or --write refreshed them"),
+      USAGE,
+      FINDINGS(
+        "--check or --dry-run found drift, or any mode found an unresolvable link, a malformed link, an unwritable fence, or an edit-plan conflict",
+      ),
+    ],
+    notes:
+      "Experimental because the fence authoring syntax may still change. A snippet is never executed; the source file is only read. Only fences whose info string carries claude-cli:snippet= are considered, and unlinked fences never appear in the payload. Unlike md fix, a finding with no available fix — a deleted source file, a deleted region, a fence the refreshed body cannot fit into — fails every mode including --write, because this command's job is checking rather than fixing; drift alone fails only --check and --dry-run. Comparison ignores line endings, trailing horizontal whitespace, and trailing blank lines, and nothing else. Source reads are confined to the workspace root and refuse non-regular files, files over 2 MiB, and files containing NUL; writes are confined to the md fix containment root. The mode is deliberately not settable from project configuration.",
+  }),
 
   // Markdown: references and graph
   diagnostic("refs", "One or more targets missing"),

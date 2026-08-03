@@ -33,6 +33,7 @@ export const tocFixer: Fixer = {
   name: "toc",
   description: "Synchronize the generated block between TOC markers",
   network: false,
+  default: true,
 
   plan(files: readonly string[], context: FixerContext): Promise<FixerResult> {
     const edits: PlannedEdit[] = [];

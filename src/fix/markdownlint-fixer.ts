@@ -111,6 +111,7 @@ export const markdownlintFixer: Fixer = {
   name: "markdownlint",
   description: "Apply markdownlint fixes for rules with an unambiguous repair",
   network: false,
+  default: true,
 
   async plan(files: readonly string[], context: FixerContext): Promise<FixerResult> {
     const config = await loadMarkdownlintConfig(runtime().config.markdownlint.config);

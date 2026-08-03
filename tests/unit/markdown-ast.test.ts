@@ -214,6 +214,24 @@ describe("extractCodeBlocks", () => {
     expect(blocks[0].line).toBe(3);
     expect(blocks[0].endLine).toBe(7);
   });
+
+  it("captures the fence info string after the language", () => {
+    const content = '```ts title="x" claude-cli:snippet=a.ts#r\nconst x = 1;\n```\n';
+    const blocks = extractCodeBlocks(parseMarkdown(content));
+    expect(blocks[0].lang).toBe("ts");
+    expect(blocks[0].meta).toBe('title="x" claude-cli:snippet=a.ts#r');
+  });
+
+  it("reports null meta for a bare fence and an indented block", () => {
+    expect(extractCodeBlocks(parseMarkdown("```js\na\n```\n"))[0].meta).toBeNull();
+    expect(extractCodeBlocks(parseMarkdown("    indented\n"))[0].meta).toBeNull();
+  });
+
+  it("includes offsets addressing the raw fence span", () => {
+    const content = "text\n\n```js\na\n```\n";
+    const blocks = extractCodeBlocks(parseMarkdown(content));
+    expect(content.slice(blocks[0].start, blocks[0].end)).toBe("```js\na\n```");
+  });
 });
 
 describe("isLineInCodeBlock", () => {

@@ -15,6 +15,7 @@ export interface CheckConfig {
   graph: boolean;
   toc: boolean;
   external: boolean;
+  snippets: boolean;
 }
 
 export interface FrontmatterRulesConfig {
@@ -109,6 +110,7 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "frontmatter",
     "graph",
     "toc",
+    "snippets",
     "style",
     "mermaid",
     "katex",
@@ -187,6 +189,11 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
   // is CLI-only, so a checked-in config file can never turn `md fix` into a
   // writer, and mode resolution needs no config-versus-CLI disambiguation.
   fix: new Set(["format", "paths", "rule", "include", "exclude", "changedSince"]),
+  // `check`, `dryRun`, and `write` are deliberately absent, on the same rule as
+  // `md fix` and `md audit --write-baseline`. It matters most here: `--write`
+  // copies the contents of arbitrary source files into tracked documents, so a
+  // checked-in config file must not be able to enable it.
+  "check-snippets": new Set(["format", "paths", "includeOk", "include", "exclude"]),
   index: new Set(["format", "paths", "include", "exclude"]),
 };
 
@@ -671,6 +678,9 @@ export function loadConfig(
       graph: boolean(checks.graph, "checks.graph", true),
       toc: boolean(checks.toc, "checks.toc", true),
       external: boolean(checks.external, "checks.external", false),
+      // On by default, and nearly free: a document with no linked fence costs
+      // one substring test per code block and can never produce a finding.
+      snippets: boolean(checks.snippets, "checks.snippets", true),
     },
     frontmatter: {
       ...(frontmatterSchema ? { schema: resolveFile(base, frontmatterSchema) } : {}),

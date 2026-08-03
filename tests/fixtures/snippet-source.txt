@@ -1,0 +1,6 @@
+before the region
+// claude-cli:snippet:start greet
+hello
+world
+// claude-cli:snippet:end greet
+after the region

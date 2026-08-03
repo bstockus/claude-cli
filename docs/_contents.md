@@ -40,6 +40,7 @@ This directory is the reference documentation for `claude-cli`.
 - [`md lint`](commands/md-lint.md)
 - [`md lint-dir`](commands/md-lint-dir.md)
 - [`md check-urls`](commands/md-check-urls.md)
+- [`md check-snippets`](commands/md-check-snippets.md)
 - [`md validate-frontmatter`](commands/md-validate-frontmatter.md)
 - [`md audit`](commands/md-audit.md)
 

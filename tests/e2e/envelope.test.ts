@@ -96,6 +96,12 @@ describe("--envelope", () => {
     { label: "md index status", args: (c) => ["md", "index", "status", c.workspace] },
     { label: "md headers", args: () => ["md", "headers", path.join(fixtures, "clean.md")] },
     { label: "md toc", args: () => ["md", "toc", path.join(fixtures, "clean.md")] },
+    {
+      // A fixture rather than a temporary root: source reads are bounded by
+      // the workspace root, which for this suite is the repository.
+      label: "md check-snippets (findings)",
+      args: () => ["md", "check-snippets", path.join(fixtures, "snippet-stale.md")],
+    },
     { label: "agent inspect", args: (c) => ["agent", "inspect", c.bundle] },
     { label: "agent specs", args: () => ["agent", "specs", "--target", "all"] },
   ];

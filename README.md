@@ -187,6 +187,7 @@ checks:
   frontmatter: true
   toc: true
   external: false
+  snippets: true
 
 frontmatter:
   schema: schemas/document.yml
@@ -547,11 +548,67 @@ Files, directories, globs, stdin, and `--changed-since` are supported.
 claude-cli md validate-frontmatter docs --schema schemas/document.yml
 ```
 
+#### `md check-snippets [inputs...]`
+
+Compare fenced code blocks against the source files and regions they declare, and optionally
+refresh them. A snippet is never executed; the source file is only read.
+
+```bash
+claude-cli md check-snippets docs
+claude-cli md check-snippets docs --dry-run
+claude-cli md check-snippets docs --write
+```
+
+A block opts in through its fence info string, so every other fence costs one substring test and
+never appears in the output:
+
+````text
+```ts claude-cli:snippet=src/toc.ts#render
+export function renderToc(headings: MdHeading[], ordered = false): string {
+  ...
+}
+```
+````
+
+The source marks the region with a comment. The marker is matched inside the line, so the
+comment leader does not matter and anything after the name is ignored — `//`, `#`, `--`, `/*`,
+and `<!--` all work:
+
+```ts
+// claude-cli:snippet:start render
+export function renderToc(...) { ... }
+// claude-cli:snippet:end render
+```
+
+Omitting the `#region` selects the whole file. The language is required: a fence without one
+puts the attribute where it would be silently inert, and that is reported rather than skipped.
+
+Comparison ignores line endings, trailing horizontal whitespace, and trailing blank lines, and
+nothing else — `--write` emits that same form, so writing and then checking is clean by
+construction. Only the fence interior is ever rewritten, so the info string and any attribute
+another toolchain owns survive byte for byte. A fence indented inside a list item is refreshed
+with its indentation re-applied; one in a blockquote, one closed by end of file, and one whose
+refreshed body would contain a fence-closing line are reported and left alone while the rest of
+the document still refreshes.
+
+Unlike `md fix`, a finding with no available fix — a deleted source file or a deleted region —
+fails **every** mode including `--write`, because this command's job is checking. Drift alone
+fails only `--check` and `--dry-run`.
+
+Source reads are confined to the workspace root and refuse symlink escapes, non-regular files,
+files over 2 MiB, and files containing NUL. Writes are confined to the directory containing the
+selected documents. The mode cannot be set from project configuration.
+
+The same engine backs `md fix --rule snippets` (opt-in) and `md audit` (on by default).
+
+Options: `--check`, `--dry-run`, `--write`, `--include-ok`, `--include`, `--exclude`.
+
 #### `md audit [directory]`
 
-Run configured lint, reference, graph, frontmatter, and generated-TOC checks as one bounded
-workspace operation. Graph checking is on by default. Frontmatter and TOC checks run when
-configured; external URLs stay offline unless enabled explicitly.
+Run configured lint, reference, graph, frontmatter, generated-TOC, and source-linked snippet
+checks as one bounded workspace operation. Graph and snippet checking are on by default.
+Frontmatter and TOC checks run when configured; external URLs stay offline unless enabled
+explicitly.
 
 ```bash
 claude-cli md audit
@@ -572,7 +629,8 @@ never fails the build, and a document this tool did not write is reported as a f
 than silently trusted. `--baseline` is configurable; `--write-baseline` is not, so a checked-in
 config cannot turn the checker into a writer.
 
-Use `--[no-]frontmatter`, `--[no-]graph`, and `--[no-]toc` to select workspace checks.
+Use `--[no-]frontmatter`, `--[no-]graph`, `--[no-]toc`, and `--[no-]snippets` to select
+workspace checks.
 Lint selection, concurrency, include/exclude, graph entry, and URL timeout/retry options
 are also available. JSON output is one object containing enabled and skipped checks,
 totals, normalized findings, and graph metrics.
@@ -967,7 +1025,7 @@ multi-file rollback rewrites bytes best-effort and is not crash-safe.
 Offsets are UTF-16 code-unit indices, not bytes, which is why `expected` is mandatory rather
 than advisory — a mismatch aborts instead of corrupting a document containing emoji.
 
-Available rules:
+Available rules — every one below except `snippets` runs when `--rule` is omitted:
 
 - `toc` — synchronize the content between existing `claude-cli:toc` markers. Inserting markers
   is an authoring decision, not a fix.
@@ -978,6 +1036,10 @@ Available rules:
 - `markdownlint` — apply markdownlint's own fix for an allowlist of unambiguous whitespace
   rules (`MD009`, `MD010`, `MD012`, `MD018`–`MD021`, `MD023`, `MD027`, `MD030`, `MD037`–`MD039`,
   `MD047`). Style-preference and prose-rewriting rules are excluded.
+- `snippets` — refresh a fenced block from the source region its info string declares. **Opt-in
+  via `--rule snippets`**: it is the only fixer whose edits are decided by files other than the
+  Markdown being fixed, and a broadly-run `md fix --write` must not silently acquire the reach
+  to read arbitrary source files. See `md check-snippets` above.
 
 Options: `--rule <name>` (repeatable), `--check`, `--dry-run`, `--write`, `--include`,
 `--exclude`, `--changed-since <revision>`.
@@ -1052,6 +1114,7 @@ This command is the sole reason `@modelcontextprotocol/sdk` is a dependency; see
 - **mermaid** - Mermaid diagram syntax validation
 - **katex** - KaTeX math expression validation
 - **references** - Link, anchor, and image reference validation
+- **snippets** - Fenced code blocks compared against the source regions they declare
 
 Heading anchors follow GitHub's slugging behavior, including Unicode and duplicate-heading
 suffixes. Inline links and full, collapsed, and shortcut reference-style links and images

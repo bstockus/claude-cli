@@ -12,6 +12,8 @@ import { terminate } from "../command-result.js";
 import type { Issue } from "../types.js";
 import { formatDiagnostics } from "../automation.js";
 import { changedMarkdownFiles } from "../input-selection.js";
+import { extractCodeBlocks } from "../markdown-ast.js";
+import { createSourceReader, synchronizeSnippets } from "../snippets.js";
 import { jsonPayload } from "../result.js";
 import { packageName, packageVersion } from "../version.js";
 import {
@@ -29,6 +31,7 @@ interface AuditOptions extends TocOptions {
   frontmatter: boolean;
   graph: boolean;
   toc: boolean;
+  snippets: boolean;
   style: boolean;
   mermaid: boolean;
   katex: boolean;
@@ -108,6 +111,52 @@ function graphFindings(graph: WorkspaceGraph): Issue[] {
       message: "Document is unreachable from configured entry points",
     })),
   ];
+}
+
+/**
+ * Snippet drift, reported but never repaired.
+ *
+ * The checker names are prefixed `snippets/` so the audit category derived
+ * from the checker matches the `enabled` entry. Messages carry the target as
+ * the author wrote it and no line number, because `--baseline` keys on
+ * checker, workspace-relative path, and message.
+ */
+function snippetFindings(files: readonly string[]): Issue[] {
+  const root = runtime().config.root;
+  const read = createSourceReader(root);
+  const issues: Issue[] = [];
+  for (const file of files) {
+    const document = runtime().workspace.document(file);
+    const results = synchronizeSnippets(document.content, extractCodeBlocks(document.tree), {
+      file,
+      root,
+      read,
+    });
+    for (const result of results) {
+      if (result.status === "current") continue;
+      if (result.status === "stale") {
+        issues.push({
+          file,
+          line: result.line,
+          checker: "snippets/drift",
+          message: `Snippet is out of date with ${result.target}`,
+        });
+        continue;
+      }
+      const kind = result.reason.startsWith("source-")
+        ? "source"
+        : result.reason.startsWith("region-")
+          ? "region"
+          : "meta";
+      issues.push({
+        file,
+        line: result.line,
+        checker: `snippets/${kind}`,
+        message: result.message,
+      });
+    }
+  }
+  return issues;
 }
 
 export async function auditAction(directory: string, opts: AuditOptions): Promise<void> {
@@ -193,6 +242,11 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
       if (!result.current) findings.push({ file, line: 1, checker: "toc", message: result.issue! });
     }
   } else skipped.push("toc");
+
+  if (opts.snippets) {
+    enabled.push("snippets");
+    findings.push(...snippetFindings(files));
+  } else skipped.push("snippets");
 
   if (opts.external) {
     enabled.push("external");

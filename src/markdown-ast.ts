@@ -48,7 +48,20 @@ export interface MdCodeBlock {
   line: number;
   endLine: number;
   lang: string | null;
+  /**
+   * The fence info string after the language, or null.
+   *
+   * Internal only: no command projects this into a payload. Emitting it
+   * unconditionally would change `md code-blocks --format json`, the MCP
+   * `list_code_blocks` tool, and `md query code-blocks` for every consumer,
+   * for a field that is null on almost every fence.
+   */
+  meta: string | null;
   value: string;
+  /** UTF-16 code-unit offset of the opening fence, or of the first indented line. */
+  start: number;
+  /** Exclusive. Offsets rather than lines, so a caller can express a scoped edit. */
+  end: number;
 }
 
 const parser = unified().use(remarkParse).use(remarkGfm);
@@ -225,13 +238,25 @@ export function extractCodeBlocks(tree: Root): MdCodeBlock[] {
   visit(tree, "code", (node: Code) => {
     const line = node.position?.start.line ?? 0;
     const endLine = node.position?.end.line ?? 0;
-    blocks.push({ line, endLine, lang: node.lang ?? null, value: node.value });
+    blocks.push({
+      line,
+      endLine,
+      lang: node.lang ?? null,
+      meta: node.meta ?? null,
+      value: node.value,
+      start: node.position?.start.offset ?? 0,
+      end: node.position?.end.offset ?? 0,
+    });
   });
 
   return blocks;
 }
 
-export function isLineInCodeBlock(line: number, codeBlocks: MdCodeBlock[]): boolean {
+/** Takes only what it reads, so a caller can pass any block-shaped record. */
+export function isLineInCodeBlock(
+  line: number,
+  codeBlocks: readonly { line: number; endLine: number }[],
+): boolean {
   return codeBlocks.some((b) => line >= b.line && line <= b.endLine);
 }
 

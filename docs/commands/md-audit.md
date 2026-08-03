@@ -6,9 +6,10 @@
 claude-cli md audit [directory] [options]
 ```
 
-Runs a bounded workspace audit combining enabled lint, external URL, frontmatter, graph, and
-generated-TOC checks. Graph checking is enabled by default. Frontmatter and TOC checks run
-when configured; external URL requests remain disabled unless enabled.
+Runs a bounded workspace audit combining enabled lint, external URL, frontmatter, graph,
+generated-TOC, and source-linked snippet checks. Graph and snippet checking are enabled by
+default. Frontmatter and TOC checks run when configured; external URL requests remain disabled
+unless enabled.
 
 ## Arguments
 
@@ -28,6 +29,7 @@ when configured; external URL requests remain disabled unless enabled.
 | `--frontmatter` / `--no-frontmatter` | `checks.frontmatter` (`true`) | Toggle configured frontmatter checks.               |
 | `--graph` / `--no-graph`             | `checks.graph` (`true`)       | Toggle graph checks.                                |
 | `--toc` / `--no-toc`                 | `checks.toc` (`true`)         | Toggle TOC synchronization checks for `toc.files`.  |
+| `--snippets` / `--no-snippets`       | `checks.snippets` (`true`)    | Toggle source-linked snippet checks.                |
 | `-s`, `--style` / `--no-style`       | `checks.markdownlint`         | Toggle markdownlint.                                |
 | `--mermaid` / `--no-mermaid`         | `checks.mermaid`              | Toggle Mermaid checks.                              |
 | `--katex` / `--no-katex`             | `checks.katex`                | Toggle KaTeX checks.                                |
@@ -42,6 +44,23 @@ when configured; external URL requests remain disabled unless enabled.
 | `--include <glob>`                   | `files.include`               | Repeatable include glob.                            |
 | `--exclude <glob>`                   | `files.exclude`               | Repeatable exclude glob.                            |
 | `-h`, `--help`                       | —                             | Show help.                                          |
+
+## Snippet checks
+
+Reports fenced code blocks that have drifted from the source region their info string declares.
+The syntax and the comparison rule are documented on the
+[`md check-snippets`](md-check-snippets.md) page; audit only reports, and never refreshes.
+
+| Checker           | Condition                                                              |
+| ----------------- | ---------------------------------------------------------------------- |
+| `snippets/drift`  | The documented body no longer matches the source.                      |
+| `snippets/source` | The source file is missing, outside the workspace root, or unreadable. |
+| `snippets/region` | The named region is missing, duplicated, or malformed.                 |
+| `snippets/meta`   | The fence attribute itself is malformed.                               |
+
+On by default, and effectively free: a document with no linked fence costs one substring test
+per code block and can never produce a finding. Messages carry the target as the author wrote
+it, with no line number and no absolute path, so `--baseline` entries stay portable.
 
 ## Baselines
 

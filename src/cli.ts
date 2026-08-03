@@ -28,6 +28,7 @@ import { queryAction } from "./commands/query.js";
 import { contextAction } from "./commands/context.js";
 import { diffAction } from "./commands/diff.js";
 import { fixAction } from "./commands/fix.js";
+import { checkSnippetsAction } from "./commands/check-snippets.js";
 import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
@@ -708,6 +709,8 @@ common(md.command("audit"))
   .option("--no-graph", "Disable graph checks")
   .option("--toc", "Enable configured TOC checks")
   .option("--no-toc", "Disable TOC checks")
+  .option("--snippets", "Enable source-linked snippet checks")
+  .option("--no-snippets", "Disable source-linked snippet checks")
   .option("-s, --style", "Include markdown style checks")
   .option("--no-style", "Disable markdown style checks")
   .option("--mermaid", "Enable Mermaid checks")
@@ -740,6 +743,7 @@ common(md.command("audit"))
           frontmatter: projectConfig.checks.frontmatter,
           graph: projectConfig.checks.graph,
           toc: projectConfig.checks.toc,
+          snippets: projectConfig.checks.snippets,
           style: projectConfig.checks.markdownlint,
           mermaid: projectConfig.checks.mermaid,
           katex: projectConfig.checks.katex,
@@ -1154,6 +1158,49 @@ common(md.command("fix"))
           maxDepth: String(projectConfig.commands.toc?.maxDepth ?? "6"),
           minDepth: String(projectConfig.commands.toc?.minDepth ?? "1"),
           ordered: Boolean(projectConfig.commands.toc?.ordered ?? false),
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("check-snippets"))
+  .description("Compare fenced code blocks against the source regions they declare")
+  .argument("[inputs...]", "Markdown files, directories, or globs (default: workspace root)")
+  .option("--check", "Report drift without writing (default)")
+  .option("--dry-run", "Print the full plan without writing")
+  .option("--write", "Refresh linked blocks as one transaction")
+  .option("--include-ok", "Include up-to-date snippets in output")
+  .option("--no-include-ok", "Exclude up-to-date snippets from output")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nOnly fences whose info string carries claude-cli:snippet=<path>[#<region>] are\n" +
+      "considered. A snippet is never executed; the source file is only read.\n\n" +
+      "The mode defaults to --check, and --check, --dry-run, and --write are mutually\n" +
+      "exclusive. The mode cannot be set from project configuration, so a checked-in\n" +
+      "config file can never turn this checker into a writer.\n\n" +
+      "Source reads are confined to the workspace root; writes are confined to the\n" +
+      "directory containing the selected documents.\n\n" +
+      "Format shorthands:\n" +
+      "  -fh             Shorthand for --format=human\n" +
+      "  -fj             Shorthand for --format=json\n\n" +
+      "Exit codes:\n" +
+      "  0  Every linked snippet matches, or --write refreshed them\n" +
+      "  2  --check or --dry-run found drift, or any mode found a link it\n" +
+      "     could not resolve, a malformed link, a fence it cannot rewrite,\n" +
+      "     or an edit-plan conflict",
+  )
+  .action((inputs: string[], opts: Record<string, unknown>) =>
+    checkSnippetsAction(
+      inputs.length ? inputs : [projectConfig.root],
+      commandOptions(
+        "check-snippets",
+        {
+          includeOk: false,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
         },
         opts,
       ) as never,

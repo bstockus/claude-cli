@@ -9,6 +9,7 @@ src/cli.ts             commander entry point; every subcommand is registered her
 src/commands/*.ts      one file per subcommand, each exporting a `<name>Action`
 src/checkers/*.ts      katex, mermaid, references, markdown-lint
 src/markdown-ast.ts    shared unified/remark parsing + extraction helpers
+src/snippets.ts        source-linked snippet parsing, extraction, and write planning
 src/formatters.ts      llm / human / json output rendering
 src/result.ts          the single `--format json` write path, and `--envelope`
 src/agent/targets/*.ts versioned per-target capability profiles
@@ -31,8 +32,8 @@ in `src/contract/schemas/agent.ts`.
 - Output format is always selectable via `--format llm|human|json` (default `llm`), with
   `-fh`/`-fj` shorthands expanded in `src/cli.ts` before commander parses argv.
 - Exit codes: `0` success, `1` usage error, `2` actionable issues found.
-- `md rename-heading`, `md rename-file`, `md toc --write`, and `agent convert` are the
-  commands that write to files.
+- `md rename-heading`, `md rename-file`, `md toc --write`, `md fix --write`,
+  `md check-snippets --write`, and `agent convert` are the commands that write to files.
 - Every `--format json` payload goes through `jsonPayload` in `src/result.ts`, which is what
   makes `--envelope` reach all of them. Writing `JSON.stringify` inline at a new site silently
   opts that command out.
@@ -145,6 +146,28 @@ in `src/contract/schemas/agent.ts`.
   round trip would churn the file. A plain `parse` + `stringify` would delete every comment.
 - **`agent doctor --output` takes a conversion root, not a package root.** A package root also
   holds catalogs, checksums, and the inventory, which `diffOutput` would report as unmanaged.
+- **A snippet link is read from `Code.meta`, never by scanning the document.** That is the whole
+  reason the syntax lives in the fence info string: remark reports an inner fence as characters
+  inside the outer block's `value`, so a fenced example _documenting_ the syntax is unreachable
+  rather than merely guarded — unlike the TOC markers, which `synchronizeToc` has to filter
+  through `isLineInCodeBlock`. "Optimizing" `src/snippets.ts` into a line scan would make this
+  repo's own `docs/commands/md-check-snippets.md` go live. `tests/e2e/cli.test.ts` runs
+  `md check-snippets docs README.md` over this repository and asserts exit 0.
+- **`MdCodeBlock.meta`, `start`, and `end` are internal.** No command projects them into a
+  payload. Emitting `meta` unconditionally would change `md code-blocks -fj`, the MCP
+  `list_code_blocks` tool, and `md query code-blocks` bytes for every consumer, for a field that
+  is null on almost every fence — the same rule as `Artifact.origin`.
+- **`md check-snippets` bounds reads and writes by different roots.** Source reads are confined
+  to `config.root`, because a document under `docs/` legitimately points at `../src`; writes use
+  `containmentRoot`, which for `md check-snippets docs` is `docs/` and would reject every real
+  source. `--write` copies arbitrary file contents into tracked documents, so the read guards in
+  `readSnippetSource` — realpath containment, regular-file, size, NUL — are the feature's
+  security boundary, not hygiene. `check`/`write`/`dryRun` stay out of `COMMAND_OPTIONS` for the
+  same reason.
+- **The `snippets` fixer is deliberately not in the `md fix` default set.** `selectFixers([])`
+  filters on `Fixer.default`; it is the only fixer whose edits are decided by files other than
+  the Markdown being fixed, and a broadly-run `md fix --write` must not silently acquire that
+  reach.
 - **No published schema may set `additionalProperties: false` or `$ref` another document.**
   The first would make every additive change break validating consumers; the second would make
   `claude-cli schema <id>` return something that cannot be compiled on its own.

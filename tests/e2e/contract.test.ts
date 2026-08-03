@@ -323,6 +323,22 @@ describe("declared output schemas match real output", () => {
       outcome: "success",
       exitCode: 0,
     },
+    // Fixtures rather than a temporary workspace: source reads are bounded by
+    // the workspace root, which for this suite is the repository it runs in.
+    {
+      label: "md check-snippets (up to date)",
+      schema: "md-check-snippets",
+      args: () => ["md", "check-snippets", path.join(fixtures, "snippet-current.md"), "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md check-snippets (drift)",
+      schema: "md-check-snippets",
+      args: () => ["md", "check-snippets", path.join(fixtures, "snippet-stale.md"), "-fj"],
+      outcome: "findings",
+      exitCode: 2,
+    },
     {
       label: "md orphans",
       schema: "md-orphans",

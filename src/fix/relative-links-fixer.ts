@@ -59,6 +59,7 @@ export const relativeLinksFixer: Fixer = {
   name: "relative-links",
   description: "Normalize local link paths without changing what they point at",
   network: false,
+  default: true,
 
   plan(files: readonly string[], context: FixerContext): Promise<FixerResult> {
     const edits: PlannedEdit[] = [];
