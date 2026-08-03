@@ -1,0 +1,37 @@
+{
+  "legacy": true,
+  "layouts": {
+    "claude-code/plugin": [
+      ".claude-plugin/plugin.json",
+      "agents/legacy-agent.md",
+      "skills/legacy/SKILL.md"
+    ],
+    "claude-code/project": [
+      ".claude/agents/legacy-agent.md",
+      ".claude/skills/legacy/SKILL.md"
+    ],
+    "codex/plugin": [
+      ".codex-plugin/plugin.json",
+      "skills/legacy/SKILL.md"
+    ],
+    "codex/project": [
+      ".agents/skills/legacy/SKILL.md",
+      ".codex/agents/legacy-agent.toml"
+    ],
+    "cursor/plugin": [
+      ".cursor-plugin/plugin.json",
+      "agents/legacy-agent.md",
+      "skills/legacy-plugin-legacy/SKILL.md"
+    ],
+    "cursor/project": [
+      ".cursor/agents/legacy-agent.md",
+      ".cursor/skills/legacy/SKILL.md"
+    ]
+  },
+  "diagnostics": [
+    "AB001",
+    "AB332",
+    "AB340"
+  ],
+  "executableModes": {}
+}

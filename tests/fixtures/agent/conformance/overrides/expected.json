@@ -1,0 +1,36 @@
+{
+  "legacy": false,
+  "layouts": {
+    "claude-code/plugin": [
+      ".claude-plugin/plugin.json",
+      "agents/helper.md",
+      "skills/claude-only/SKILL.md",
+      "skills/shared/SKILL.md"
+    ],
+    "claude-code/project": [
+      ".claude/agents/helper.md",
+      ".claude/skills/claude-only/SKILL.md",
+      ".claude/skills/shared/SKILL.md"
+    ],
+    "codex/plugin": [
+      ".codex-plugin/plugin.json",
+      "skills/shared/SKILL.md"
+    ],
+    "codex/project": [
+      ".agents/skills/shared/SKILL.md",
+      ".codex/agents/helper.toml"
+    ],
+    "cursor/plugin": [
+      ".cursor-plugin/plugin.json",
+      "skills/overrides-shared/SKILL.md"
+    ],
+    "cursor/project": [
+      ".cursor/skills/shared/SKILL.md"
+    ]
+  },
+  "diagnostics": [
+    "AB332",
+    "AB340"
+  ],
+  "executableModes": {}
+}

@@ -1,0 +1,9 @@
+{
+  "hooks": {
+    "pre-tool-use": [
+      { "matcher": "Bash", "command": "./hooks/guard.sh", "windowsCommand": "guard.cmd" }
+    ],
+    "stop": [ { "command": "./hooks/done.sh" } ],
+    "on-lunar-eclipse": [ { "command": "./hooks/never.sh" } ]
+  }
+}

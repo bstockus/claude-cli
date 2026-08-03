@@ -1,0 +1,4 @@
+schemaVersion: '1'
+name: rich
+version: 2.1.0
+description: A bundle exercising every component type

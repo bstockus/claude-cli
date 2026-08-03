@@ -1,0 +1,102 @@
+{
+  "legacy": false,
+  "layouts": {
+    "claude-code/plugin": [
+      ".claude-plugin/plugin.json",
+      "agents/reviewer.md",
+      "agents/scout.md",
+      "assets/readme.md",
+      "assets/sub/blob.bin",
+      "hooks/done.sh",
+      "hooks/guard.sh",
+      "hooks/hooks.json",
+      "skills/build/NOTES.md",
+      "skills/build/SKILL.md",
+      "skills/deploy/SKILL.md"
+    ],
+    "claude-code/project": [
+      ".claude/agents/reviewer.md",
+      ".claude/agents/scout.md",
+      ".claude/rules/manual.md",
+      ".claude/rules/style.md",
+      ".claude/settings.json",
+      ".claude/skills/build/NOTES.md",
+      ".claude/skills/build/SKILL.md",
+      ".claude/skills/deploy/SKILL.md",
+      "assets/readme.md",
+      "assets/sub/blob.bin"
+    ],
+    "codex/plugin": [
+      ".codex-plugin/plugin.json",
+      "assets/readme.md",
+      "assets/sub/blob.bin",
+      "hooks/done.sh",
+      "hooks/guard.sh",
+      "hooks/hooks.json",
+      "skills/build/NOTES.md",
+      "skills/build/SKILL.md",
+      "skills/build/agents/openai.yaml",
+      "skills/deploy/SKILL.md"
+    ],
+    "codex/project": [
+      ".agents/skills/build/NOTES.md",
+      ".agents/skills/build/SKILL.md",
+      ".agents/skills/build/agents/openai.yaml",
+      ".agents/skills/deploy/SKILL.md",
+      ".codex/agents/reviewer.toml",
+      ".codex/agents/scout.toml",
+      ".codex/rules/bundle.rules",
+      "AGENTS.md",
+      "assets/readme.md",
+      "assets/sub/blob.bin"
+    ],
+    "cursor/plugin": [
+      ".cursor-plugin/plugin.json",
+      ".cursor/rules/manual.mdc",
+      ".cursor/rules/style.mdc",
+      "agents/reviewer.md",
+      "agents/scout.md",
+      "assets/readme.md",
+      "assets/sub/blob.bin",
+      "hooks/done.sh",
+      "hooks/guard.sh",
+      "hooks/hooks.json",
+      "skills/rich-build/NOTES.md",
+      "skills/rich-build/SKILL.md",
+      "skills/rich-deploy/SKILL.md"
+    ],
+    "cursor/project": [
+      ".cursor/agents/reviewer.md",
+      ".cursor/agents/scout.md",
+      ".cursor/rules/manual.mdc",
+      ".cursor/rules/style.mdc",
+      ".cursor/skills/build/NOTES.md",
+      ".cursor/skills/build/SKILL.md",
+      ".cursor/skills/deploy/SKILL.md",
+      "assets/readme.md",
+      "assets/sub/blob.bin"
+    ]
+  },
+  "diagnostics": [
+    "AB141",
+    "AB302",
+    "AB310",
+    "AB320",
+    "AB321",
+    "AB331",
+    "AB332",
+    "AB340",
+    "AB350",
+    "AB351",
+    "AB360",
+    "AB361"
+  ],
+  "executableModes": {
+    "claude-code/plugin/hooks/done.sh": "0755",
+    "claude-code/plugin/hooks/guard.sh": "0755",
+    "codex/plugin/hooks/done.sh": "0755",
+    "codex/plugin/hooks/guard.sh": "0755",
+    "cursor/plugin/hooks/done.sh": "0755",
+    "cursor/plugin/hooks/guard.sh": "0755"
+  }
+}

@@ -1,0 +1,7 @@
+schemaVersion: '1'
+name: overrides
+version: 1.0.0
+description: Exercises target overrides and selection
+targets:
+  cursor:
+    enabled: true

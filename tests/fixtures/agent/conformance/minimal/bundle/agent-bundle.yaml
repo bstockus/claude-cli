@@ -1,0 +1,4 @@
+schemaVersion: '1'
+name: minimal
+version: 0.1.0
+description: The smallest valid bundle

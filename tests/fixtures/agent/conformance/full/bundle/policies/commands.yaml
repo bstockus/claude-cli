@@ -1,0 +1,8 @@
+rules:
+  - pattern: git push
+    action: deny
+    justification: Pushing must be explicit
+    positiveExamples: ["git push origin main"]
+    negativeExamples: ["git status"]
+  - pattern: npm test
+    action: allow

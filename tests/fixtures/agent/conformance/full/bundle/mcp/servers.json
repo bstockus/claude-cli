@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "docs": { "command": "node", "args": ["${BUNDLE_ROOT}/mcp/server.js"] }
+  }
+}
