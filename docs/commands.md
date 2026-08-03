@@ -13,6 +13,7 @@ signatures are required arguments; square brackets are optional arguments.
 | `claude-cli describe`                                     | Describe the CLI contract: commands, options, exit codes, and schemas. |
 | `claude-cli schema`                                       | Print a published output schema, or list the available schemas.        |
 | [`claude-cli completion <shell>`](commands/completion.md) | Print a shell completion script for bash, zsh, fish, or powershell.    |
+| [`claude-cli serve <protocol>`](commands/serve.md)        | Serve the workspace engine over a machine protocol, read-only.         |
 | `claude-cli agent`                                        | Convert, validate, and inspect portable agent bundles.                 |
 | `claude-cli md`                                           | Validate, query, analyze, and modify Markdown workspaces.              |
 

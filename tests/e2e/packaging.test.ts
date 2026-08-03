@@ -64,6 +64,16 @@ describe("published package contents", () => {
     expect(packedFiles).toContain("dist/commands/agent-doctor.js");
   });
 
+  // src/serve/ is a new top-level directory under rootDir: "src", so it compiles
+  // into dist and ships via the existing files entry — but only as long as its
+  // contents stay TypeScript modules. A tool manifest kept as a .json file would
+  // be silently absent and `serve mcp` would advertise no tools.
+  it("ships the MCP server", () => {
+    expect(packedFiles).toContain("dist/commands/serve.js");
+    expect(packedFiles).toContain("dist/serve/server.js");
+    expect(packedFiles).toContain("dist/serve/tools.js");
+  });
+
   it("ships the docs but not the sources or tests", () => {
     expect(packedFiles).toContain("README.md");
     expect(packedFiles).toContain("LICENSE");

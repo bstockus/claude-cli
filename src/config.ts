@@ -414,6 +414,28 @@ export function selectConfig(
   return { explicitPath, disabled };
 }
 
+/**
+ * The directory a `serve` invocation asks to expose, resolved against `cwd`.
+ *
+ * Scanned out of argv before commander parses it, for the same reason
+ * `selectConfig` is: the configuration decides which checks and exclusions the
+ * server answers with, and it has to be discovered from the served directory
+ * rather than from wherever the host happened to spawn the process. Without
+ * this the server would silently answer from `process.cwd()` and disagree with
+ * the equivalent `md` command run in the same workspace.
+ *
+ * This is a confinement boundary, not a workspace root — `config.root` stays
+ * whatever the discovered configuration says.
+ */
+export function selectRoot(argv: readonly string[], cwd: string = process.cwd()): string {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--root" && argv[i + 1]) return path.resolve(cwd, argv[i + 1]);
+    if (arg.startsWith("--root=")) return path.resolve(cwd, arg.slice(7));
+  }
+  return path.resolve(cwd);
+}
+
 export function findConfig(start: string = process.cwd()): string | undefined {
   let current = path.resolve(start);
   while (true) {

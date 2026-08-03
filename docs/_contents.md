@@ -33,6 +33,7 @@ This directory is the reference documentation for `claude-cli`.
 
 - [`check-update`](commands/check-update.md)
 - [`completion`](commands/completion.md)
+- [`serve`](commands/serve.md)
 
 ## Markdown validation commands
 

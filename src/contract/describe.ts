@@ -119,7 +119,7 @@ export function walkCommands(program: Command): DescribedCommand[] {
         arguments: command.registeredArguments.map(describeArgument),
         options: command.options.filter((option) => !option.hidden).map(describeOption),
         subcommands: children.map((child) => [...path, child.name()].join(" ")),
-        formats: contract ? [...contract.formats] : null,
+        formats: contract?.formats ? [...contract.formats] : null,
         defaultFormat: contract?.defaultFormat ?? null,
         formatConfigurable: contract?.formatConfigurable ?? false,
         outputSchema: contract?.outputSchema ?? null,

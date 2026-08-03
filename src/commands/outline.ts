@@ -1,4 +1,4 @@
-import type { MdHeading } from "../markdown-ast.js";
+import { buildOutline, type OutlineNode } from "../outline.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
 import { jsonPayload } from "../result.js";
@@ -9,48 +9,10 @@ interface OutlineOptions {
   maxDepth: string;
 }
 
-interface OutlineNode {
-  text: string;
-  slug: string;
-  depth: number;
-  line: number;
-  children: OutlineNode[];
-}
-
 function resolveFormat(opts: OutlineOptions): "llm" | "human" | "json" {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";
-}
-
-function buildTree(headings: MdHeading[]): OutlineNode[] {
-  const root: OutlineNode[] = [];
-  const stack: OutlineNode[] = [];
-
-  for (const h of headings) {
-    const node: OutlineNode = {
-      text: h.text,
-      slug: h.slug,
-      depth: h.depth,
-      line: h.line,
-      children: [],
-    };
-
-    // Pop stack until we find a parent with lower depth
-    while (stack.length > 0 && stack[stack.length - 1].depth >= h.depth) {
-      stack.pop();
-    }
-
-    if (stack.length === 0) {
-      root.push(node);
-    } else {
-      stack[stack.length - 1].children.push(node);
-    }
-
-    stack.push(node);
-  }
-
-  return root;
 }
 
 function renderOutlineText(
@@ -93,12 +55,12 @@ export async function outlineAction(file: string, opts: OutlineOptions): Promise
   }
 
   if (format === "json") {
-    const outlineTree = buildTree(headings);
+    const outlineTree = buildOutline(headings);
     process.stdout.write(jsonPayload("md outline", outlineTree, opts));
     return;
   }
 
-  const outlineTree = buildTree(headings);
+  const outlineTree = buildOutline(headings);
   const lines = renderOutlineText(outlineTree, 0, format);
   process.stdout.write(lines.join("\n") + "\n");
 }

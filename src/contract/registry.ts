@@ -128,6 +128,25 @@ const CONTRACTS: CommandContract[] = [
       "The shell script is written verbatim regardless of --format; the script is the payload, so there is no JSON form. It is generated from the same command walk describe uses, so it cannot drift from the real command tree, and it embeds that tree rather than calling back into the CLI, so completing costs no process spawn. Never writes to a shell profile. The update notice is suppressed, because the eval install idiom runs from an interactive rc file where stderr is a TTY.",
   },
 
+  {
+    id: "serve",
+    // A protocol server has no output format: stdout is the JSON-RPC channel,
+    // not a payload stream, so there is nothing for --format to select.
+    formats: null,
+    defaultFormat: null,
+    formatConfigurable: false,
+    outputSchema: null,
+    exitCodes: [
+      OK("The client closed the connection"),
+      { code: 1, meaning: "Unknown protocol, unreadable root, or invalid configuration" },
+    ],
+    stream: { success: "stdout" },
+    writes: false,
+    stability: "experimental",
+    notes:
+      "Speaks the Model Context Protocol over stdio. stdout carries JSON-RPC frames rather than a payload, so --format is not accepted and no output schema applies; every diagnostic goes to stderr, which MCP treats as the server log. Tool arguments and results are described by each tool's own JSON Schema, retrieved through tools/list rather than through `schema`. Every tool is read-only and every path argument is confined to --root, resolved through symlinks; refactor tools are deliberately absent rather than gated. Configuration is discovered from --root, so a tool answers the same as the equivalent md command in that workspace. Unlike md index this never writes the workspace cache: the server keeps a bounded in-memory cache and leaves the on-disk index alone.",
+  },
+
   // Agent
   agentCommand("convert", {
     writes: true,

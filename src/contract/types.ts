@@ -23,9 +23,15 @@ export interface ExitCodeMeaning {
 export interface CommandContract {
   /** Space-joined command path, e.g. "md graph". */
   id: string;
-  formats: readonly OutputFormat[];
+  /**
+   * Accepted output formats, or null when the command has no output format at
+   * all — `serve` speaks a protocol on stdout rather than writing a payload.
+   * Null is not the same as undeclared; `describe` already reports null for a
+   * command with no contract row, and its published schema permits both.
+   */
+  formats: readonly OutputFormat[] | null;
   /** Built-in default, before any project configuration is applied. */
-  defaultFormat: OutputFormat;
+  defaultFormat: OutputFormat | null;
   /** True when `.claude-cli.yml` may override the format for this command. */
   formatConfigurable: boolean;
   /** Schema id for `--format json`, or `null` when none is published yet. */

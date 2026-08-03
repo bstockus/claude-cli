@@ -1015,6 +1015,37 @@ Options:
 Both rename commands can modify files. `toc --write` also updates its explicitly marked block.
 Use `--dry-run` before rename operations.
 
+### Serving the engine over MCP
+
+#### `serve <protocol>`
+
+Expose the workspace engine to an agent host as [Model Context Protocol](https://modelcontextprotocol.io)
+tools, so the host calls the engine directly instead of spawning the CLI and parsing its output.
+
+```bash
+claude-cli serve mcp --root docs
+claude mcp add markdown -- claude-cli serve mcp --root docs
+```
+
+Eleven read-only tools are exposed: `list_documents`, `get_section`, `query_workspace`,
+`build_context`, `inspect_graph`, `audit_markdown`, `get_outline`, `get_frontmatter`,
+`list_tasks`, `list_code_blocks`, and `find_references`. Each mirrors the equivalent `md`
+command's `--format json` payload, with paths relative to `--root`. Configuration is discovered
+from `--root`, so a tool answers the same as that command would in the same workspace.
+
+The server is read-only by construction rather than by flag — there is no write path in the
+process, and no option adds one. Every path argument is resolved through symlinks and confined
+to `--root`; traversals, escaping symlinks, and a path of `-` are all refused without echoing
+the path back. The on-disk workspace index is left untouched in favor of a bounded in-memory
+cache.
+
+stdout carries JSON-RPC frames rather than a payload, so `--format` does not apply and
+diagnostics go to stderr. Options: `--root <dir>`, `--config <file>`, `--no-config`,
+`--max-documents <n>`, `--concurrency <n>`.
+
+This command is the sole reason `@modelcontextprotocol/sdk` is a dependency; see
+[the command page](docs/commands/serve.md#dependencies) for what that pulls in.
+
 ## Checks
 
 - **markdownlint** - Markdown structural and formatting rules (opt-in via `--style`)

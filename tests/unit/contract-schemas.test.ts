@@ -98,6 +98,11 @@ describe("command contract registry", () => {
         contract.exitCodes.some((exit) => exit.code === 0),
         contract.id,
       ).toBe(true);
+      // A protocol command has no output format at all: `serve` writes JSON-RPC
+      // frames to stdout rather than a payload, so there is nothing to select.
+      // Both fields are null together or neither is.
+      expect(contract.formats === null, contract.id).toBe(contract.defaultFormat === null);
+      if (contract.formats === null) continue;
       expect(contract.formats, contract.id).toContain(contract.defaultFormat);
       for (const format of contract.formats) expect(ALL_FORMATS).toContain(format);
     }
@@ -140,6 +145,11 @@ describe("command contract registry", () => {
 
   it("only offers the automation formats to commands that emit findings", () => {
     for (const contract of entries) {
+      if (contract.formats === null) {
+        expect(contract.jsonlSchema, contract.id).toBeFalsy();
+        expect(contract.sarifSchema, contract.id).toBeFalsy();
+        continue;
+      }
       if (contract.formats.includes("jsonl"))
         expect(contract.jsonlSchema, contract.id).toBeTruthy();
       if (contract.jsonlSchema) expect(contract.formats, contract.id).toContain("jsonl");

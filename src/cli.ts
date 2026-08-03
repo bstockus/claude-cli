@@ -31,7 +31,7 @@ import { fixAction } from "./commands/fix.js";
 import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
-import { loadConfig, selectConfig, defaultLintConcurrency } from "./config.js";
+import { loadConfig, selectConfig, selectRoot, defaultLintConcurrency } from "./config.js";
 import type { ResolvedConfig } from "./config.js";
 import { commandOptions, initializeRuntime, runtime } from "./runtime.js";
 import { CommandExit } from "./command-result.js";
@@ -56,6 +56,7 @@ import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
 import { completionAction } from "./commands/completion.js";
+import { serveAction, type ServeOptions } from "./commands/serve.js";
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -65,10 +66,19 @@ const argv = process.argv.map((arg) => {
   return arg;
 });
 
+// `serve` loads configuration for the same reason `md` does: it answers with the
+// workspace's own checks and exclusions, so a tool call and the equivalent `md`
+// command agree. Discovery starts at --root rather than the cwd, because the host
+// spawns the server from an arbitrary directory.
+const servesWorkspace = argv[2] === "md" || argv[2] === "serve";
 let projectConfig: ResolvedConfig;
 try {
-  projectConfig =
-    argv[2] === "md" ? loadConfig(selectConfig(argv.slice(2))) : loadConfig({ disabled: true });
+  projectConfig = servesWorkspace
+    ? loadConfig(
+        selectConfig(argv.slice(2)),
+        argv[2] === "serve" ? selectRoot(argv.slice(2)) : process.cwd(),
+      )
+    : loadConfig({ disabled: true });
   initializeRuntime(projectConfig);
 } catch (error) {
   process.stderr.write(`Error: ${(error as Error).message}\n`);
@@ -416,6 +426,23 @@ program
       toolName: packageName,
       toolVersion: version,
     }),
+  );
+
+program
+  .command("serve")
+  .description("Serve the workspace engine over a machine protocol")
+  .argument("<protocol>", "Protocol: mcp")
+  .option("--root <dir>", "Directory to serve; every path is confined to it", ".")
+  .option("--config <file>", "Path to a configuration file")
+  .option("--no-config", "Ignore any configuration file")
+  .option("--max-documents <n>", "Parsed documents held in memory before eviction")
+  .option("--concurrency <n>", "Parallel lints during audit_markdown")
+  .addHelpText(
+    "after",
+    "\nSpeaks the Model Context Protocol over stdio, exposing the Markdown workspace\nengine as read-only tools. stdout carries JSON-RPC frames rather than a payload,\nso --format does not apply; diagnostics go to stderr.\n\nEvery tool is read-only and every path argument is confined to --root, resolved\nthrough symlinks. Configuration is discovered from --root, so a tool answers the\nsame as the equivalent md command in that workspace.\n\nRegister with a host:\n  claude mcp add markdown -- claude-cli serve mcp --root docs\n\nExit codes:\n  0  The client closed the connection\n  1  Unknown protocol, unreadable root, or invalid configuration",
+  )
+  .action((protocol: string, opts: Record<string, unknown>) =>
+    serveAction(protocol, opts as unknown as ServeOptions),
   );
 
 // Internal: refreshes the cached latest version. Spawned detached by the notifier.

@@ -1,6 +1,6 @@
 import type { ResolvedConfig } from "./config.js";
 import { loadConfig, resolveCommandOptions, type PathStyle } from "./config.js";
-import { Workspace } from "./workspace.js";
+import { Workspace, type WorkspaceOptions } from "./workspace.js";
 import { ALL_FORMATS, supportsDiagnosticFormats } from "./formats.js";
 import type { OutputFormat } from "./types.js";
 
@@ -11,8 +11,16 @@ export interface Runtime {
 
 let activeRuntime: Runtime | undefined;
 
-export function initializeRuntime(config: ResolvedConfig): Runtime {
-  activeRuntime = { config, workspace: new Workspace(config) };
+/**
+ * Installs the process-wide runtime.
+ *
+ * `options` exists for the long-lived server: library helpers such as
+ * `documentsReferencing` and `lintFile` reach for `runtime().workspace`, so a
+ * bounded workspace has to be *the* workspace rather than a second instance
+ * alongside it, or those helpers would quietly populate the unbounded one.
+ */
+export function initializeRuntime(config: ResolvedConfig, options?: WorkspaceOptions): Runtime {
+  activeRuntime = { config, workspace: new Workspace(config, options) };
   return activeRuntime;
 }
 

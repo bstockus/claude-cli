@@ -80,6 +80,29 @@ export function inside(root: string, target: string): boolean {
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
+export interface WorkspaceOptions {
+  cachePath?: string;
+  /**
+   * Upper bound on cached documents, evicting least-recently-used past it.
+   *
+   * Unbounded when absent, which is right for a one-shot invocation that exits
+   * before the cache can matter. A long-lived process needs the bound: every
+   * entry retains the file's content, its per-line split, and the full mdast
+   * tree, and a single workspace-wide command materializes all of them.
+   */
+  maxDocuments?: number;
+  /**
+   * Whether parsed documents are read from and written to the on-disk index.
+   * Defaults to true.
+   *
+   * A long-lived process should disable it. `WorkspaceIndex` accumulates every
+   * parse into `changed` until a flush, and it latches its load once, so a
+   * flush at shutdown would rewrite a snapshot that a concurrent
+   * `md index clear` had already deleted.
+   */
+  persistIndex?: boolean;
+}
+
 export class Workspace {
   readonly root: string;
   private readonly cache = new Map<
@@ -87,13 +110,39 @@ export class Workspace {
     { fingerprint?: FileFingerprint; document: MarkdownDocument; transient?: boolean }
   >();
   private readonly index: WorkspaceIndex;
+  private readonly maxDocuments: number;
+  private readonly persistIndex: boolean;
 
   constructor(
     readonly config: ResolvedConfig,
-    options: { cachePath?: string } = {},
+    options: WorkspaceOptions = {},
   ) {
     this.root = config.root;
     this.index = new WorkspaceIndex(config.root, config.markdown.renderer, options.cachePath);
+    this.maxDocuments = options.maxDocuments ?? Infinity;
+    this.persistIndex = options.persistIndex ?? true;
+  }
+
+  /**
+   * Records `entry` as most recently used, evicting past `maxDocuments`.
+   *
+   * `Map` iterates in insertion order, so re-inserting is what moves an entry to
+   * the end and makes the first key the least recently used one.
+   */
+  private retain(
+    key: string,
+    entry: { fingerprint?: FileFingerprint; document: MarkdownDocument; transient?: boolean },
+  ): void {
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    if (this.cache.size <= this.maxDocuments) return;
+    for (const oldest of this.cache.keys()) {
+      // A transient document has no file to re-read it from, so evicting it
+      // would lose content rather than merely cost a reparse.
+      if (this.cache.get(oldest)?.transient) continue;
+      this.cache.delete(oldest);
+      break;
+    }
   }
 
   displayPath(filePath: string, style = this.config.output.paths): string {
@@ -113,16 +162,17 @@ export class Workspace {
       cached.fingerprint?.size === current.size &&
       cached.fingerprint.mtimeMs === current.mtimeMs
     ) {
+      this.retain(absolute, cached);
       return cached.document;
     }
-    const indexed = this.index.get(absolute, current);
+    const indexed = this.persistIndex ? this.index.get(absolute, current) : undefined;
     if (indexed) {
-      this.cache.set(absolute, { fingerprint: current, document: indexed });
+      this.retain(absolute, { fingerprint: current, document: indexed });
       return indexed;
     }
     const document = buildDocument(absolute, fs.readFileSync(absolute, "utf-8"));
-    this.cache.set(absolute, { fingerprint: current, document });
-    this.index.set(absolute, current, document);
+    this.retain(absolute, { fingerprint: current, document });
+    if (this.persistIndex) this.index.set(absolute, current, document);
     return document;
   }
 
@@ -134,7 +184,7 @@ export class Workspace {
 
   registerDocument(filePath: string, content: string): string {
     const absolute = path.resolve(filePath);
-    this.cache.set(absolute, { transient: true, document: buildDocument(absolute, content) });
+    this.retain(absolute, { transient: true, document: buildDocument(absolute, content) });
     return absolute;
   }
 
@@ -235,6 +285,7 @@ export class Workspace {
   }
 
   flush(): void {
+    if (!this.persistIndex) return;
     this.index.flush();
   }
 }
