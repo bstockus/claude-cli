@@ -35,6 +35,25 @@ are reported. Hard validation errors and strict-mode findings do not write.
 `--dry-run` and `--check` are read-only modes. Existing nonempty destinations require
 `--force` during a writing conversion.
 
+## The conversion report
+
+`conversion-report.json` at the output root records the result of the conversion plus the
+provenance of the build:
+
+| Field                  | Description                                                  |
+| ---------------------- | ------------------------------------------------------------ |
+| `generator`            | Name and version of the `claude-cli` that produced the tree. |
+| `profileSchemaVersion` | Version of the target conformance profile structure.         |
+| `targetProfiles`       | The documentation revision of each target profile used.      |
+
+[`agent doctor`](agent-doctor.md) reads these to tell a tree generated against an older
+target profile from a current one.
+
+Because the report embeds the generator version, `--check` compares it by **existence only**
+rather than byte for byte — otherwise every tree would report as stale after any `claude-cli`
+upgrade. This loses nothing: the report is derived from artifacts that `--check` already
+compares byte for byte.
+
 ## Exit codes
 
 | Code | Meaning                                              |

@@ -61,6 +61,33 @@ export interface Artifact {
   mode: number;
 }
 
+export type HostStatus = "unknown" | "unverified" | "below-minimum" | "verified" | "newer";
+
+export interface HostReport {
+  target: AgentTarget;
+  /** The version supplied via `--host-version`, or `null` when none was given. */
+  requested: string | null;
+  minimumVersion: string | null;
+  verifiedThrough: string | null;
+  documentationRevision: string;
+  status: HostStatus;
+}
+
+export interface DoctorReport {
+  /** One row per selected target, present even when no host version is known. */
+  hosts: HostReport[];
+  /** Populated only when `--output` was given. */
+  output?: { root: string; missing: string[]; changed: string[]; unmanaged: string[] };
+  /** Rendered paths no target profile describes. */
+  undeclared: Array<{ target: AgentTarget; profile: AgentProfile; path: string }>;
+  /**
+   * Reserved for evidence from a host's own validator. Always empty in this
+   * release: `agent doctor` never spawns a process, so its result does not
+   * depend on what happens to be installed.
+   */
+  native: never[];
+}
+
 export interface AgentResult {
   command: "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs";
   ok: boolean;
@@ -73,6 +100,8 @@ export interface AgentResult {
   compatibility?: unknown;
   /** The full target conformance profiles, emitted by `agent specs`. */
   specs?: unknown;
+  /** Conformance findings, emitted by `agent doctor`. */
+  doctor?: DoctorReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

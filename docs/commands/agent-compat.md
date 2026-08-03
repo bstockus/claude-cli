@@ -9,6 +9,10 @@ claude-cli agent compat [source] [options]
 Without `source`, prints the general platform compatibility matrix. With `source`, analyzes
 that bundle and identifies exact, approximate, unsupported, or target-specific mappings.
 
+The matrix is a one-line-per-component summary generated from the target conformance
+profiles. For the full machine-readable profiles use [`agent specs`](agent-specs.md); to
+check a bundle and its generated output against them use [`agent doctor`](agent-doctor.md).
+
 ## Arguments
 
 | Argument | Required | Description                                                                   |

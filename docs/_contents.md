@@ -14,6 +14,8 @@ This directory is the reference documentation for `claude-cli`.
 - [`agent validate`](commands/agent-validate.md)
 - [`agent inspect`](commands/agent-inspect.md)
 - [`agent compat`](commands/agent-compat.md)
+- [`agent doctor`](commands/agent-doctor.md)
+- [`agent specs`](commands/agent-specs.md)
 
 ## Other top-level commands
 

@@ -43,6 +43,7 @@ import {
   agentActionBoundary,
 } from "./commands/agent.js";
 import { agentSpecsAction } from "./commands/agent-specs.js";
+import { agentDoctorAction } from "./commands/agent-doctor.js";
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -161,6 +162,24 @@ agent
   .option("--format <fmt>", "Output format: llm, human, json", "llm")
   .action((source: string | undefined, opts: Parameters<typeof agentCompatAction>[1]) =>
     agentActionBoundary("compat", opts, () => agentCompatAction(source, opts)),
+  );
+
+agent
+  .command("doctor")
+  .description("Check a bundle and generated output against the target conformance profiles")
+  .argument("[source]", "Optional bundle root")
+  .option("--target <target>", "Target (repeatable, or all)", collect)
+  .option("--profile <profile>", "Output profile: plugin, project, both", "both")
+  .option("--output <dir>", "Also check an existing generated output root")
+  .option("--host-version <spec>", "Installed host version: <target>@<version>", collect)
+  .option("--strict", "Treat warnings as blocking findings")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .addHelpText(
+    "after",
+    "\nRuns without a bundle: profile self-checks and host version reporting still apply.\nNever executes a host's own tooling, so results do not depend on what is installed.\n\nExit codes:\n  0  No blocking conformance findings\n  1  Invocation or I/O error\n  2  Profile, drift, host, or strict finding",
+  )
+  .action((source: string | undefined, opts: Parameters<typeof agentDoctorAction>[1]) =>
+    agentActionBoundary("doctor", opts, () => agentDoctorAction(source, opts)),
   );
 
 agent

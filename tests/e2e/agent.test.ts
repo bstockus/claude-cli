@@ -41,10 +41,10 @@ afterEach(() => {
 });
 
 describe("agent CLI", () => {
-  it("shows all four subcommands", async () => {
+  it("shows every subcommand", async () => {
     const result = await run("agent", "--help");
     expect(result.exitCode).toBe(0);
-    for (const command of ["convert", "validate", "inspect", "compat"])
+    for (const command of ["convert", "validate", "inspect", "compat", "doctor", "specs"])
       expect(result.stdout).toContain(command);
   });
 
@@ -134,6 +134,85 @@ describe("agent CLI", () => {
       "codex",
       "cursor",
     ]);
+  });
+
+  it("publishes the target conformance profiles", async () => {
+    const result = await run("agent", "specs", "--target", "all", "-fj");
+    expect(result.exitCode).toBe(0);
+    const specs = JSON.parse(result.stdout).specs;
+    expect(specs.schemaVersion).toBe("1");
+    expect(Object.keys(specs.targets)).toEqual(["claude-code", "codex", "cursor"]);
+    expect(specs.targets.cursor.paths.namespacePluginSkills).toBe(true);
+  });
+
+  it("runs doctor without a bundle or an installed host", async () => {
+    const result = await run("agent", "doctor", "--target", "all", "-fj");
+    expect(result.exitCode).toBe(0);
+    const doctor = JSON.parse(result.stdout).doctor;
+    expect(doctor.hosts).toHaveLength(3);
+    expect(doctor.hosts.every((host: { status: string }) => host.status === "unknown")).toBe(true);
+    // Reserved for evidence from a host's own validator, which is never run.
+    expect(doctor.native).toEqual([]);
+  });
+
+  it("accepts a host version with no recorded range and stays useful", async () => {
+    const result = await run(
+      "agent",
+      "doctor",
+      "--target",
+      "claude-code",
+      "--host-version",
+      "claude-code@1.0.0",
+      "-fj",
+    );
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(result.stdout);
+    expect(parsed.doctor.hosts[0]).toMatchObject({ requested: "1.0.0", status: "unverified" });
+    expect(parsed.diagnostics.map((item: { code: string }) => item.code)).toContain("AB414");
+  });
+
+  it("rejects a malformed host version with a usage error", async () => {
+    const result = await run("agent", "doctor", "--host-version", "codex@latest", "-fj");
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).diagnostics[0].code).toBe("AB000");
+  });
+
+  it("detects drift between a bundle and its generated output", async () => {
+    const source = fixture();
+    const output = path.join(os.tmpdir(), `agent-doctor-${path.basename(source)}`);
+    temporary.push(output);
+    const args = ["--target", "claude-code", "--output", output];
+    expect((await run("agent", "convert", source, ...args)).exitCode).toBe(0);
+
+    const clean = await run("agent", "doctor", source, ...args, "-fj");
+    expect(clean.exitCode).toBe(0);
+    expect(JSON.parse(clean.stdout).doctor.output).toMatchObject({
+      missing: [],
+      changed: [],
+      unmanaged: [],
+    });
+
+    fs.appendFileSync(path.join(output, "claude-code/plugin/skills/hello/SKILL.md"), "drift\n");
+    const stale = await run("agent", "doctor", source, ...args, "-fj");
+    expect(stale.exitCode).toBe(2);
+    const codes = JSON.parse(stale.stdout).diagnostics.map((item: { code: string }) => item.code);
+    expect(codes).toContain("AB402");
+  });
+
+  it("treats an unmanaged file as a warning unless strict", async () => {
+    const source = fixture();
+    const output = path.join(os.tmpdir(), `agent-doctor-extra-${path.basename(source)}`);
+    temporary.push(output);
+    const args = ["--target", "claude-code", "--output", output];
+    expect((await run("agent", "convert", source, ...args)).exitCode).toBe(0);
+    fs.writeFileSync(path.join(output, "claude-code/plugin/stray.txt"), "stray\n");
+
+    const lenient = await run("agent", "doctor", source, ...args, "-fj");
+    expect(lenient.exitCode).toBe(0);
+    expect(JSON.parse(lenient.stdout).doctor.output.unmanaged).toEqual([
+      "claude-code/plugin/stray.txt",
+    ]);
+    expect((await run("agent", "doctor", source, ...args, "--strict")).exitCode).toBe(2);
   });
 
   it("reports stale output and requires force for replacement", async () => {

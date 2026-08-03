@@ -21,6 +21,8 @@ signatures are required arguments; square brackets are optional arguments.
 | [`agent validate <source>`](commands/agent-validate.md) | Validate a bundle without generating artifacts.                                 |
 | [`agent inspect <source>`](commands/agent-inspect.md)   | Show the normalized bundle, references, overrides, and component graph.         |
 | [`agent compat [source]`](commands/agent-compat.md)     | Show the compatibility matrix or analyze one bundle against selected targets.   |
+| [`agent doctor [source]`](commands/agent-doctor.md)     | Check a bundle and generated output against the target conformance profiles.    |
+| [`agent specs`](commands/agent-specs.md)                | Print the versioned target conformance profiles.                                |
 
 Agent targets are `claude-code`, `codex`, `cursor`, and `all`.
 

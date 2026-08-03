@@ -9,6 +9,7 @@ import type {
   AgentResult,
   AgentTarget,
   Artifact,
+  DoctorReport,
 } from "../agent/types.js";
 import { TARGETS } from "../agent/types.js";
 import type { SpecsPayload } from "../agent/targets/index.js";
@@ -110,6 +111,31 @@ function formatSpecs(specs: SpecsPayload): string[] {
   return lines;
 }
 
+function formatDoctor(doctor: DoctorReport): string[] {
+  const lines = ["hosts:"];
+  for (const host of doctor.hosts)
+    lines.push(
+      `  ${host.target.padEnd(12)} ${host.status.padEnd(14)} installed: ${host.requested ?? "unknown"}` +
+        `  verified: ${host.minimumVersion ?? "unrecorded"} .. ${host.verifiedThrough ?? "unrecorded"}` +
+        `  profile: ${host.documentationRevision}`,
+    );
+  if (doctor.output) {
+    const { root, missing, changed, unmanaged } = doctor.output;
+    lines.push(
+      "",
+      `output: ${root}`,
+      `  missing: ${missing.length}  changed: ${changed.length}  unmanaged: ${unmanaged.length}`,
+    );
+  }
+  if (doctor.undeclared.length)
+    lines.push(
+      "",
+      `undeclared paths: ${doctor.undeclared.length}`,
+      ...doctor.undeclared.map((item) => `  ${item.target}/${item.profile}/${item.path}`),
+    );
+  return lines;
+}
+
 function formatResult(result: AgentResult, format: string | undefined): string {
   if (format && !["llm", "human", "json"].includes(format))
     throw new Error(`Invalid output format: ${format}`);
@@ -124,6 +150,7 @@ function formatResult(result: AgentResult, format: string | undefined): string {
   if (result.bundle) lines.push("", JSON.stringify(result.bundle, null, 2));
   if (result.compatibility) lines.push("", JSON.stringify(result.compatibility, null, 2));
   if (result.specs) lines.push("", ...formatSpecs(result.specs as SpecsPayload));
+  if (result.doctor) lines.push("", ...formatDoctor(result.doctor));
   if (result.diagnostics.length) {
     lines.push("", "diagnostics:");
     for (const item of result.diagnostics) {
