@@ -1,0 +1,159 @@
+import type { TargetProfile } from "./schema.js";
+import { PROFILE_SCHEMA_VERSION } from "./schema.js";
+
+export const claudeCodeProfile: TargetProfile = {
+  schemaVersion: PROFILE_SCHEMA_VERSION,
+  id: "claude-code",
+  host: {
+    displayName: "Claude Code",
+    documentationRevision: "2026-08-02",
+    // Not recorded: no verified host range has been established for this profile.
+    // Filling these in later is a data edit, not a code change.
+    minimumVersion: null,
+    verifiedThrough: null,
+    versionCommand: ["claude", "--version"],
+    nativeValidator: null,
+  },
+  profiles: ["plugin", "project"],
+  manifest: {
+    directory: ".claude-plugin",
+    file: "plugin.json",
+    fields: [
+      { name: "name", required: true, support: "exact" },
+      { name: "version", required: true, support: "exact" },
+      { name: "description", required: true, support: "exact" },
+      { name: "skills", required: false, support: "exact" },
+      { name: "agents", required: false, support: "exact" },
+      { name: "hooks", required: false, support: "exact" },
+      { name: "mcpServers", required: false, support: "exact" },
+    ],
+  },
+  paths: {
+    plugin: {
+      skills: "skills",
+      agents: "agents",
+      hooks: "hooks",
+      assets: "assets",
+      mcp: ".mcp.json",
+    },
+    project: {
+      skills: ".claude/skills",
+      agents: ".claude/agents",
+      rules: ".claude/rules",
+      policies: ".claude/settings.json",
+      mcp: ".mcp.json",
+      assets: "assets",
+    },
+    namespacePluginSkills: false,
+  },
+  placeholders: {
+    bundleRoot: { plugin: "${CLAUDE_PLUGIN_ROOT}", project: "${CLAUDE_PROJECT_DIR}" },
+    arguments: "native",
+    rootVariables: ["${CLAUDE_PLUGIN_ROOT}", "${CLAUDE_PROJECT_DIR}", "${CLAUDE_SKILL_DIR}"],
+  },
+  hooks: {
+    events: {
+      "session-start": "SessionStart",
+      "pre-tool-use": "PreToolUse",
+      "post-tool-use": "PostToolUse",
+      stop: "Stop",
+    },
+    envelope: "hooks",
+    handlerShape: "claude-nested",
+    supportedProtocols: ["json", "stdio-json"],
+  },
+  models: {
+    support: "exact",
+    classes: { fast: "haiku", balanced: "sonnet", capable: "opus", inherit: "inherit" },
+  },
+  tools: {
+    support: "exact",
+    capabilities: {
+      read: ["Read", "Glob", "Grep"],
+      write: ["Write", "Edit"],
+      shell: ["Bash"],
+      web: ["WebFetch", "WebSearch"],
+    },
+  },
+  rules: {
+    exactActivation: ["always", "files"],
+    approximateActivation: [],
+    form: "markdown",
+  },
+  outputs: {
+    plugin: [
+      { feature: "manifest", pattern: ".claude-plugin/plugin.json" },
+      { feature: "skills", pattern: "skills/{name}/**" },
+      { feature: "agents", pattern: "agents/{name}.md" },
+      { feature: "hooks", pattern: "hooks/**" },
+      { feature: "mcp", pattern: ".mcp.json" },
+      { feature: "assets", pattern: "assets/**" },
+    ],
+    project: [
+      { feature: "skills", pattern: ".claude/skills/{name}/**" },
+      { feature: "agents", pattern: ".claude/agents/{name}.md" },
+      { feature: "rules", pattern: ".claude/rules/{name}.md" },
+      { feature: "policies", pattern: ".claude/settings.json" },
+      { feature: "mcp", pattern: ".mcp.json" },
+      { feature: "assets", pattern: "assets/**" },
+    ],
+  },
+  features: {
+    skills: {
+      support: "exact",
+      profiles: ["plugin", "project"],
+      summary: "exact",
+      surface: "skills/<name>/SKILL.md",
+      diagnostics: [],
+    },
+    agents: {
+      support: "exact",
+      profiles: ["plugin", "project"],
+      summary: "exact",
+      surface: "agents/<name>.md",
+      diagnostics: ["AB330", "AB331"],
+    },
+    rules: {
+      support: "exact",
+      profiles: ["project"],
+      summary: "project",
+      surface: ".claude/rules/<name>.md",
+      diagnostics: ["AB350", "AB351"],
+    },
+    hooks: {
+      support: "exact",
+      profiles: ["plugin"],
+      summary: "exact for portable events",
+      surface: "hooks/hooks.json",
+      diagnostics: ["AB320", "AB321", "AB322"],
+    },
+    policies: {
+      support: "approximate",
+      profiles: ["project"],
+      summary: "project permissions",
+      surface: ".claude/settings.json",
+      diagnostics: ["AB360"],
+    },
+    mcp: {
+      support: "exact",
+      profiles: ["plugin", "project"],
+      summary: "exact",
+      surface: ".mcp.json",
+      diagnostics: [],
+    },
+    assets: {
+      support: "exact",
+      profiles: ["plugin", "project"],
+      summary: "exact",
+      surface: "assets/",
+      diagnostics: [],
+    },
+    placeholders: {
+      support: "exact",
+      profiles: ["plugin", "project"],
+      summary: "native root and argument substitution",
+      surface: "${CLAUDE_PLUGIN_ROOT}",
+      diagnostics: [],
+    },
+  },
+};
