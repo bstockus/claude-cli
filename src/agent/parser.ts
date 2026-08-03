@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 import { diagnostic, TARGETS } from "./types.js";
 import { normalizeManifest } from "./manifest.js";
+import { loadOverlays } from "./overlays.js";
 
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TARGET_BLOCK = /<!--\s*(\/)?(target|platform):([^\s]+)\s*-->/g;
@@ -629,7 +630,7 @@ export function loadBundle(source: string): AgentBundle {
     legacy,
     manifest,
     ...(normalized.marketplace ? { marketplace: normalized.marketplace } : {}),
-    overlays: [],
+    overlays: loadOverlays(root, normalized.native, neutralPath, diagnostics),
     skills,
     agents,
     rules,

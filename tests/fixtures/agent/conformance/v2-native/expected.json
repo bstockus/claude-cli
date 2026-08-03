@@ -1,0 +1,38 @@
+{
+  "legacy": false,
+  "layouts": {
+    "claude-code/plugin": [
+      ".claude-plugin/marketplace.json",
+      ".claude-plugin/plugin.json",
+      "skills/hello/SKILL.md"
+    ],
+    "claude-code/project": [
+      ".claude/skills/hello/SKILL.md",
+      ".claude/statusline.json"
+    ],
+    "codex/plugin": [
+      ".codex-plugin/plugin.json",
+      "extras/note.md",
+      "skills/hello/SKILL.md"
+    ],
+    "codex/project": [
+      ".agents/skills/hello/SKILL.md"
+    ],
+    "cursor/plugin": [
+      ".cursor-plugin/plugin.json",
+      "skills/overlay-hello/SKILL.md"
+    ],
+    "cursor/project": [
+      ".cursor/skills/hello/SKILL.md"
+    ]
+  },
+  "diagnostics": [
+    "AB182"
+  ],
+  "executableModes": {},
+  "nativePaths": [
+    "claude-code/plugin/.claude-plugin/marketplace.json",
+    "claude-code/project/.claude/statusline.json",
+    "codex/plugin/extras/note.md"
+  ]
+}

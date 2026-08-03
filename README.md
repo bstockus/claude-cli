@@ -298,6 +298,10 @@ do not write.
 
 #### `agent-bundle.yaml`
 
+`schemaVersion` is `1` or `2`. Schema 2 is a strict superset: it adds `marketplace:` listing
+metadata and a `native:` overlay layer, and leaves everything else identical, so a v1 bundle
+renders exactly the same bytes under either version.
+
 The required fields are `schemaVersion`, `name`, `version`, and `description`. Component
 locations default to `skills/`, `agents/`, `hooks/`, `rules/`, `policies/`, `mcp/`, and
 `assets/`; replace any default with a string path or `{ path: ... }` at the top level or
@@ -343,6 +347,41 @@ Component frontmatter may use `include`/`exclude` target lists and typed
 Cursor-specific instructions.
 <!-- /target:cursor -->
 ```
+
+#### Native overlays
+
+Not every platform feature has a defensible portable meaning. Rather than forcing one or
+dropping it, a `schemaVersion: '2'` bundle can carry target-native files in an overlay that
+mirrors the output tree:
+
+```yaml
+schemaVersion: "2"
+name: release-helper
+version: 1.0.0
+description: Prepare and verify releases.
+
+marketplace:
+  displayName: Release Helper
+  categories: [ci, release]
+  publisher: { name: Example }
+  license: MIT
+
+native:
+  claude-code: native/claude-code
+```
+
+```text
+native/claude-code/
+  manifest.json                           # merged over the generated plugin manifest
+  plugin/.claude-plugin/marketplace.json  # -> <output>/claude-code/plugin/…
+  project/.claude/statusline.json         # -> <output>/claude-code/project/…
+```
+
+Overlay files are copied verbatim — no placeholder rewriting, no conditional blocks — and
+cannot escape their target root. They carry `"origin": "native"` in JSON output, and
+`agent doctor` reports them under `overlays` rather than treating them as undeclared paths.
+`marketplace:` is metadata only; `agent convert` ignores it. See
+[`agent convert`](docs/commands/agent-convert.md#native-overlays) for the full rules.
 
 Canonical `${ARGUMENTS}`, `${BUNDLE_ROOT}`, and `${SKILL_DIR}` placeholders are translated
 to native substitutions where available or explanatory instructions where they are not.

@@ -48,7 +48,10 @@ yourself.
 | 5   | Generated tree        | `--output` | `AB402`, `AB403`, `AB404`, `AB405`    |
 
 Check 4 is skipped for legacy Claude plugins, whose assets are written to the output root
-and so cannot be bounded by target-relative patterns.
+and so cannot be bounded by target-relative patterns. It also skips paths contributed by a
+[native overlay](agent-convert.md#native-overlays): emitting a surface the portable profile
+does not describe is exactly what an overlay is for, so those paths are listed under
+`doctor.overlays` instead of being reported as `AB401` findings.
 
 ## Diagnostics
 

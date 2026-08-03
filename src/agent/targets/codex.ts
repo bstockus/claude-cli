@@ -149,5 +149,12 @@ export const codexProfile: TargetProfile = {
       surface: "${PLUGIN_ROOT}",
       diagnostics: ["AB302"],
     },
+    native: {
+      support: "native",
+      profiles: ["plugin", "project"],
+      summary: "target-only files passed through from native/codex/",
+      surface: "native/codex/",
+      diagnostics: ["AB181", "AB182", "AB187"],
+    },
   },
 };

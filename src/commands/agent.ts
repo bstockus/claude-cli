@@ -132,6 +132,7 @@ function formatDoctor(doctor: DoctorReport): string[] {
       `  missing: ${missing.length}  changed: ${changed.length}  unmanaged: ${unmanaged.length}`,
     );
   }
+  if (doctor.overlays.length) lines.push("", `overlay paths: ${doctor.overlays.length}`);
   if (doctor.undeclared.length)
     lines.push(
       "",
@@ -180,6 +181,9 @@ function artifactInfo(artifacts: Artifact[]): AgentResult["artifacts"] {
     path: item.path,
     bytes: item.content.length,
     mode: `0${item.mode.toString(8)}`,
+    // Emitted only for overlay artifacts. Always emitting it would change
+    // conversion-report.json bytes for every bundle that has no overlay.
+    ...(item.origin === "native" ? { origin: item.origin } : {}),
   }));
 }
 

@@ -47,10 +47,17 @@ export interface NativeOverlay {
   target: AgentTarget;
   /** Absolute path to the overlay root. */
   root: string;
-  /** Overlay files, bundle-relative to `root/<profile>`, per output profile. */
+  /** Overlay files, POSIX-relative to `root/<profile>`, per output profile. */
   files: Record<AgentProfile, SourceFile[]>;
-  /** `native/<target>/manifest.json`, deep-merged over the plugin manifest. */
+  /** `native/<target>/manifest.json`, merged over the generated plugin manifest. */
   manifest?: Record<string, unknown>;
+  /**
+   * What happens when an overlay file claims a path a portable artifact already
+   * produced. Defaults to `overlay-wins`: an overlay is a deliberate,
+   * target-specific statement, so honoring it and reporting AB181 beats
+   * discarding it silently. `error` refuses the whole conversion instead.
+   */
+  onCollision: "overlay-wins" | "error";
 }
 
 export interface AgentBundle {
@@ -77,10 +84,18 @@ export interface AgentBundle {
   graph: Record<string, string[]>;
 }
 
+export type ArtifactOrigin = "portable" | "native";
+
 export interface Artifact {
   path: string;
   content: Buffer;
   mode: number;
+  /**
+   * Absent means "portable". Only overlay-sourced artifacts set it, which is
+   * what keeps `conversion-report.json` byte-identical for every bundle that
+   * has no overlay.
+   */
+  origin?: ArtifactOrigin;
 }
 
 export type HostStatus = "unknown" | "unverified" | "below-minimum" | "verified" | "newer";
@@ -102,6 +117,12 @@ export interface DoctorReport {
   output?: { root: string; missing: string[]; changed: string[]; unmanaged: string[] };
   /** Rendered paths no target profile describes. */
   undeclared: Array<{ target: AgentTarget; profile: AgentProfile; path: string }>;
+  /**
+   * Paths contributed by a native overlay. These are exempt from the declared
+   * path check by design — being outside the profile is what an overlay is for —
+   * so they are reported positively here rather than as `undeclared` findings.
+   */
+  overlays: Array<{ target: AgentTarget; profile: AgentProfile; path: string }>;
   /**
    * Reserved for evidence from a host's own validator. Always empty in this
    * release: `agent doctor` never spawns a process, so its result does not

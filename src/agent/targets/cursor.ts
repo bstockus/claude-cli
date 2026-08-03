@@ -151,5 +151,12 @@ export const cursorProfile: TargetProfile = {
       surface: null,
       diagnostics: [],
     },
+    native: {
+      support: "native",
+      profiles: ["plugin", "project"],
+      summary: "target-only files passed through from native/cursor/",
+      surface: "native/cursor/",
+      diagnostics: ["AB181", "AB182", "AB187"],
+    },
   },
 };

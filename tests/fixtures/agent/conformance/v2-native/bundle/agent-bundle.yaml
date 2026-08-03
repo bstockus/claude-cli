@@ -1,0 +1,8 @@
+schemaVersion: '2'
+name: overlay
+version: 1.0.0
+description: Exercises native overlays
+
+native:
+  claude-code: native/claude-code
+  codex: native/codex

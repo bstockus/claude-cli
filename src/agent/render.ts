@@ -11,6 +11,7 @@ import type {
 import { diagnostic } from "./types.js";
 import type { ModelClass } from "./targets/index.js";
 import { HOOK_EVENT_ALIASES, nativeHookEvent, profileFor } from "./targets/index.js";
+import { applyOverlayManifest, mergeOverlay, overlayArtifacts } from "./overlays.js";
 
 function json(value: unknown): Buffer {
   return Buffer.from(JSON.stringify(value, null, 2) + "\n");
@@ -806,11 +807,14 @@ export function renderBundle(
     for (const profile of profiles) {
       const prefix = `${target}/${profile}`;
       const local: Artifact[] = [];
+      const overlay = bundle.overlays.find((item) => item.target === target);
       if (profile === "plugin") {
         const { directory: manifestDir, file: manifestFile } = profileFor(target).manifest;
         local.push({
           path: `${manifestDir}/${manifestFile}`,
-          content: json(manifest(bundle, target)),
+          content: json(
+            applyOverlayManifest(manifest(bundle, target), overlay?.manifest, target, diagnostics),
+          ),
           mode: 0o644,
         });
       }
@@ -893,8 +897,18 @@ export function renderBundle(
             : `assets/${asset.path.split(path.sep).join("/")}`,
         });
       }
+      // Overlays merge after every portable component so a collision is decided
+      // against the complete portable set, never against a partial one.
+      const merged = mergeOverlay(
+        local,
+        overlayArtifacts(overlay, profile),
+        overlay?.onCollision ?? "overlay-wins",
+        target,
+        profile,
+        diagnostics,
+      );
       const seen = new Set<string>();
-      for (const artifact of local.sort((a, b) => a.path.localeCompare(b.path))) {
+      for (const artifact of merged.sort((a, b) => a.path.localeCompare(b.path))) {
         if (seen.has(artifact.path))
           diagnostics.push({
             ...diagnostic("AB170", `Duplicate output path '${artifact.path}'`, "unsupported", {

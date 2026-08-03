@@ -19,6 +19,8 @@ interface Expected {
   layouts: Record<string, string[]>;
   diagnostics: string[];
   executableModes: Record<string, string>;
+  /** Overlay-sourced paths, prefixed `<target>/<profile>/`. Absent means none. */
+  nativePaths?: string[];
 }
 
 const fixtures = fs
@@ -71,6 +73,9 @@ describe.each(fixtures)("conformance fixture: %s", (name) => {
       const { artifacts } = renderBundle(loadBundle(bundleRoot), [target], [profile]);
       const prefix = `${target}/${profile}/`;
       const undeclared = artifacts
+        // Overlay paths are exempt: a native overlay exists precisely to emit
+        // surfaces the portable profile does not describe.
+        .filter((artifact) => artifact.origin !== "native")
         .map((artifact) => artifact.path.slice(prefix.length))
         .filter((candidate) => !describesPath(profileFor(target), profile, candidate));
       expect(undeclared).toEqual([]);
@@ -104,6 +109,15 @@ describe.each(fixtures)("conformance fixture: %s", (name) => {
         `${item.target} declares ${item.code} as at best '${support}' but emitted '${item.quality}'`,
       ).toBeLessThanOrEqual(QUALITY_RANK[support]);
     }
+  });
+
+  it("records overlay provenance on exactly the expected paths", () => {
+    const { artifacts } = renderBundle(loadBundle(bundleRoot), [...TARGETS], PROFILES);
+    const native = artifacts
+      .filter((artifact) => artifact.origin === "native")
+      .map((artifact) => artifact.path)
+      .sort();
+    expect(native).toEqual(expected.nativePaths ?? []);
   });
 
   it("preserves executable modes", () => {

@@ -35,6 +35,54 @@ are reported. Hard validation errors and strict-mode findings do not write.
 `--dry-run` and `--check` are read-only modes. Existing nonempty destinations require
 `--force` during a writing conversion.
 
+## Native overlays
+
+A portable bundle can only express concepts with defensible cross-target semantics. Anything
+a single platform supports and the others do not — richer listing metadata, statusline or app
+wiring, themes, scheduled-task templates, host-specific settings — belongs in a **native
+overlay** rather than being forced into a portable abstraction or dropped.
+
+Overlays require `schemaVersion: '2'` and live under `native/<target>/`, mirroring the output
+tree so no path remapping is involved:
+
+```text
+bundle/
+  agent-bundle.yaml
+  skills/
+  native/
+    claude-code/
+      manifest.json                        # optional plugin-manifest fragment
+      plugin/.claude-plugin/marketplace.json  -> <output>/claude-code/plugin/.claude-plugin/marketplace.json
+      project/.claude/statusline.json         -> <output>/claude-code/project/.claude/statusline.json
+```
+
+Declare the roots in the manifest. Both forms are accepted, and an undeclared target falls
+back to `native/<target>`:
+
+```yaml
+native:
+  claude-code: native/claude-code
+  codex: { root: vendor/codex }
+```
+
+Behavior:
+
+- Overlay content is copied **verbatim**. It is not run through conditional target blocks or
+  placeholder substitution — it is already native, so rewriting it would reintroduce exactly
+  the false portability the overlay layer exists to avoid. Modes are preserved.
+- The first directory under an overlay root must be `plugin` or `project`. Anything else is
+  `AB186`, and a profile the target does not support is `AB187`.
+- An overlay may not escape its own root or the target output root. Both a `..` segment and a
+  symlink pointing outside are refused.
+- `manifest.json` at the overlay root is merged over the generated plugin manifest. New keys
+  are silent; a key that overrides a generated one reports `AB182`.
+- When an overlay file claims a path a portable component already produced, the overlay wins
+  and reports `AB181`, because a deliberate target-specific file should not be discarded
+  silently. `--strict` makes that finding blocking.
+
+Overlay artifacts carry `"origin": "native"` in `--format json` and in `conversion-report.json`;
+portable artifacts omit the field entirely.
+
 ## The conversion report
 
 `conversion-report.json` at the output root records the result of the conversion plus the

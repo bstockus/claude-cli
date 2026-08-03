@@ -155,5 +155,12 @@ export const claudeCodeProfile: TargetProfile = {
       surface: "${CLAUDE_PLUGIN_ROOT}",
       diagnostics: [],
     },
+    native: {
+      support: "native",
+      profiles: ["plugin", "project"],
+      summary: "target-only files passed through from native/claude-code/",
+      surface: "native/claude-code/",
+      diagnostics: ["AB181", "AB182", "AB187"],
+    },
   },
 };

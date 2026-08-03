@@ -232,7 +232,7 @@ export async function agentDoctorAction(
   const selectedProfiles = profiles(opts.profile);
   const hostVersions = parseHostVersions(opts.hostVersion, targets);
   const diagnostics: AgentDiagnostic[] = [];
-  const doctor: DoctorReport = { hosts: [], undeclared: [], native: [] };
+  const doctor: DoctorReport = { hosts: [], undeclared: [], overlays: [], native: [] };
 
   // 1. The profiles themselves must be internally consistent. This makes a
   //    bare `agent doctor --target all` meaningful with no bundle at all.
@@ -269,6 +269,12 @@ export async function agentDoctorAction(
           for (const artifact of rendered.artifacts) {
             if (!artifact.path.startsWith(prefix)) continue;
             const relative = artifact.path.slice(prefix.length);
+            // An overlay path is outside the profile by design — that is the
+            // point of an overlay. Report it positively instead of as a defect.
+            if (artifact.origin === "native") {
+              doctor.overlays.push({ target, profile, path: relative });
+              continue;
+            }
             if (describesPath(profileFor(target), profile, relative)) continue;
             doctor.undeclared.push({ target, profile, path: relative });
             diagnostics.push(

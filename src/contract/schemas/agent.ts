@@ -42,6 +42,11 @@ export const agentResultSchema: SchemaEntry = {
             path: { type: "string" },
             bytes: { type: "integer", minimum: 0 },
             mode: { type: "string", description: "Octal file mode, e.g. '0644'." },
+            origin: {
+              enum: ["portable", "native"],
+              description:
+                "Emitted only for artifacts contributed by a native overlay. Absent means portable.",
+            },
           },
         },
       },
@@ -59,6 +64,15 @@ export const agentResultSchema: SchemaEntry = {
       stale: { type: "boolean" },
     },
     $defs: {
+      renderedPath: {
+        type: "object",
+        required: ["target", "profile", "path"],
+        properties: {
+          target: { enum: TARGETS },
+          profile: { enum: PROFILES },
+          path: { type: "string" },
+        },
+      },
       diagnostic: {
         type: "object",
         required: ["code", "severity", "message", "quality"],
@@ -115,15 +129,13 @@ export const agentResultSchema: SchemaEntry = {
           },
           undeclared: {
             type: "array",
-            items: {
-              type: "object",
-              required: ["target", "profile", "path"],
-              properties: {
-                target: { enum: TARGETS },
-                profile: { enum: PROFILES },
-                path: { type: "string" },
-              },
-            },
+            items: { $ref: "#/$defs/renderedPath" },
+          },
+          overlays: {
+            description:
+              "Paths contributed by a native overlay. Exempt from the declared-path check by design, so they are reported here rather than under `undeclared`.",
+            type: "array",
+            items: { $ref: "#/$defs/renderedPath" },
           },
           native: {
             type: "array",

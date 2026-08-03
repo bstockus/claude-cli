@@ -52,7 +52,7 @@ describe("target profiles", () => {
   });
 
   it("only claims diagnostic codes the renderer or parser actually emits", () => {
-    const sources = ["agent/render.ts", "agent/parser.ts"]
+    const sources = ["agent/render.ts", "agent/parser.ts", "agent/overlays.ts"]
       .map((file) => fs.readFileSync(path.join(sourceRoot, file), "utf8"))
       .join("\n");
     for (const target of TARGETS)
