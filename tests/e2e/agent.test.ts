@@ -72,6 +72,59 @@ describe("agent CLI", () => {
     expect(fs.readdirSync(source, { recursive: true }).map(String)).toEqual(before);
   });
 
+  it("narrows inspect to the components and sections a target and profile reach", async () => {
+    // The overrides fixture ships a claude-code-only skill next to a shared one.
+    const overrides = path.resolve("tests/fixtures/agent/conformance/overrides/bundle");
+
+    const unfiltered = JSON.parse((await run("agent", "inspect", overrides, "-fj")).stdout);
+    expect(unfiltered.targets).toEqual([]);
+    expect(unfiltered.bundle.filter).toBeUndefined();
+    expect(unfiltered.bundle.components.skills.map((s: { name: string }) => s.name).sort()).toEqual(
+      ["claude-only", "shared"],
+    );
+
+    const codex = JSON.parse(
+      (await run("agent", "inspect", overrides, "--target", "codex", "-fj")).stdout,
+    );
+    // Filtering uses the renderer's own predicate, so inspect and convert agree.
+    expect(codex.bundle.components.skills.map((s: { name: string }) => s.name)).toEqual(["shared"]);
+    expect(codex.bundle.filter.excluded.skills).toEqual(["claude-only"]);
+    expect(codex.targets).toEqual(["codex"]);
+    // The dropped skill must not linger as a dangling graph node.
+    expect(Object.keys(codex.bundle.graph)).not.toContain("claude-only");
+
+    const full = path.resolve("tests/fixtures/agent/conformance/full/bundle");
+    // Hooks are plugin-only and rules are project-only on claude-code; both come
+    // from the target profile rather than a branch on the target name.
+    const project = JSON.parse(
+      (
+        await run(
+          "agent",
+          "inspect",
+          full,
+          "--target",
+          "claude-code",
+          "--profile",
+          "project",
+          "-fj",
+        )
+      ).stdout,
+    );
+    expect(Object.keys(project.bundle.components)).not.toContain("hooks");
+    expect(project.bundle.filter.unsupported).toEqual(["hooks"]);
+
+    const plugin = JSON.parse(
+      (await run("agent", "inspect", full, "--target", "claude-code", "--profile", "plugin", "-fj"))
+        .stdout,
+    );
+    expect(Object.keys(plugin.bundle.components)).toContain("hooks");
+    expect(plugin.bundle.filter.unsupported).toEqual(["policies", "rules"]);
+
+    const orphaned = await run("agent", "inspect", overrides, "--profile", "plugin");
+    expect(orphaned.exitCode).toBe(1);
+    expect(orphaned.stdout + orphaned.stderr).toContain("--profile requires --target");
+  });
+
   it("converts repeated targets and both profiles, then checks deterministically", async () => {
     const source = fixture();
     const output = path.join(os.tmpdir(), `agent-output-${path.basename(source)}`);
@@ -113,6 +166,102 @@ describe("agent CLI", () => {
     );
     expect(checked.exitCode).toBe(0);
     expect(JSON.parse(checked.stdout).stale).toBe(false);
+  });
+
+  it("writes the conversion report to an explicit path, in every mode", async () => {
+    const source = fixture();
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "agent-report-"));
+    temporary.push(scratch);
+    const output = path.join(scratch, "dist");
+    // A nested directory that does not exist yet: a CI path like dist/reports/.
+    const reportPath = path.join(scratch, "reports", "convert.json");
+
+    const dry = await run(
+      "agent",
+      "convert",
+      source,
+      "--target",
+      "claude-code",
+      "--output",
+      output,
+      "--dry-run",
+      "--report",
+      reportPath,
+    );
+    expect(dry.exitCode).toBe(0);
+    // The point of the flag: a report without a rendered tree.
+    expect(fs.existsSync(output)).toBe(false);
+    const dryReport = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+    // Truthful about the run, unlike the in-tree artifact which describes a tree.
+    expect(dryReport.dryRun).toBe(true);
+    expect(dryReport.command).toBe("convert");
+    expect(dryReport.generator.name).toBe("@bstockus/claude-cli");
+    expect(dryReport.targetProfiles["claude-code"]).toBeDefined();
+    // Never listed among the artifacts, whose paths are output-root relative.
+    expect(dryReport.artifacts.some((a: { path: string }) => a.path.includes("reports"))).toBe(
+      false,
+    );
+
+    // Converting with and without --report must produce identical trees.
+    const plainOutput = path.join(scratch, "plain");
+    await run("agent", "convert", source, "--target", "claude-code", "--output", plainOutput);
+    await run(
+      "agent",
+      "convert",
+      source,
+      "--target",
+      "claude-code",
+      "--output",
+      output,
+      "--report",
+      reportPath,
+    );
+    expect(fs.readFileSync(path.join(output, "conversion-report.json"))).toEqual(
+      fs.readFileSync(path.join(plainOutput, "conversion-report.json")),
+    );
+
+    // And the tree it produced is not stale, proving `artifacts` was not polluted.
+    const checked = await run(
+      "agent",
+      "convert",
+      source,
+      "--target",
+      "claude-code",
+      "--output",
+      output,
+      "--check",
+      "--report",
+      reportPath,
+      "-fj",
+    );
+    expect(checked.exitCode).toBe(0);
+    expect(JSON.parse(checked.stdout).stale).toBe(false);
+    expect(JSON.parse(fs.readFileSync(reportPath, "utf-8")).check).toBe(true);
+  });
+
+  it("refuses a report path inside the source tree or the output, before writing anything", async () => {
+    const source = fixture();
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "agent-report-bad-"));
+    temporary.push(scratch);
+
+    for (const report of [path.join(source, "r.json"), path.join(scratch, "out", "r.json")]) {
+      const output = path.join(scratch, "out");
+      const result = await run(
+        "agent",
+        "convert",
+        source,
+        "--target",
+        "claude-code",
+        "--output",
+        output,
+        "--report",
+        report,
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout + result.stderr).toContain("--report must not be inside");
+      // The refusal must abort the invocation, not a run that already rendered.
+      expect(fs.existsSync(output)).toBe(false);
+    }
   });
 
   it("dry-run and strict failures do not write", async () => {

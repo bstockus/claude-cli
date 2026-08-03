@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { CommandExit, terminate } from "../command-result.js";
 import { loadBundle } from "../agent/parser.js";
-import { renderBundle } from "../agent/render.js";
+import { renderBundle, selected } from "../agent/render.js";
 import type {
   AgentBundle,
   AgentProfile,
@@ -10,13 +10,14 @@ import type {
   AgentTarget,
   Artifact,
   DoctorReport,
+  MarkdownComponent,
 } from "../agent/types.js";
 import type { AuditReport } from "../agent/audit/index.js";
 import { formatAgentSarif } from "../agent/sarif.js";
 import { agentFormatsFor } from "../formats.js";
 import type { OutputFormat } from "../types.js";
 import { TARGETS } from "../agent/types.js";
-import type { SpecsPayload } from "../agent/targets/index.js";
+import type { FeatureKey, SpecsPayload } from "../agent/targets/index.js";
 import {
   FEATURE_KEYS,
   PROFILE_SCHEMA_VERSION,
@@ -39,6 +40,7 @@ export interface AgentOptions {
   check?: boolean;
   format?: string;
   envelope?: boolean;
+  report?: string;
 }
 
 export async function agentActionBoundary(
@@ -292,7 +294,125 @@ function writeAtomically(
   });
 }
 
-function publicBundle(bundle: AgentBundle): unknown {
+/**
+ * Writes the conversion report to an explicitly named path.
+ *
+ * Same document as `conversion-report.json`, provenance included, so a consumer
+ * has one shape to learn. It differs in exactly two ways, both toward honesty:
+ * `dryRun` and `check` carry their real values, because this describes a *run*
+ * rather than the tree it sits beside, and `stale` is present, which the
+ * in-tree artifact misses only because it is serialized before `--check` runs.
+ *
+ * It is never added to `artifacts`. Doing so would change
+ * `conversion-report.json`'s own bytes — the report contains its artifact list,
+ * and `diffOutput` compares that file by existence only, so the divergence
+ * would be silent.
+ */
+function resolveReportPath(file: string, output: string, bundleRoot: string): string {
+  const target = path.resolve(file);
+  const resolved = resolveThroughExistingAncestors(target);
+  if (isInside(fs.realpathSync(bundleRoot), resolved))
+    throw new Error("--report must not be inside the source tree");
+  // An unmanaged file under the output root is drift as far as `--check` and
+  // `agent doctor --output` are concerned.
+  if (isInside(resolveThroughExistingAncestors(output), resolved))
+    throw new Error("--report must not be inside the output directory");
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory())
+    throw new Error(`--report is a directory: ${target}`);
+  return target;
+}
+
+function writeReportFile(target: string, report: AgentResult, targets: AgentTarget[]): void {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const content = JSON.stringify({ ...report, ...conversionProvenance(targets) }, null, 2) + "\n";
+  const temporary = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, content, { mode: 0o644 });
+  fs.renameSync(temporary, target);
+}
+
+/** The bundle sections `agent inspect` reports, in feature-profile terms. */
+const INSPECTED_FEATURES: FeatureKey[] = [
+  "skills",
+  "agents",
+  "rules",
+  "hooks",
+  "policies",
+  "mcp",
+  "assets",
+];
+
+/** What `agent inspect --target`/`--profile` narrowed away. */
+interface InspectFilter {
+  targets: AgentTarget[];
+  profiles: AgentProfile[];
+  excluded: { skills: string[]; agents: string[]; rules: string[] };
+  /** Sections no selected target and profile emits at all. */
+  unsupported: FeatureKey[];
+}
+
+interface InspectSelection {
+  targets: AgentTarget[];
+  profiles: AgentProfile[];
+}
+
+/**
+ * Whether any selected target emits a feature into any selected profile.
+ *
+ * Read from the target profiles rather than branched on the target name, so a
+ * new target needs no change here.
+ */
+function featureVisible(feature: FeatureKey, selection: InspectSelection): boolean {
+  return selection.targets.some((target) => {
+    const profile = TARGET_PROFILES[target].features[feature];
+    return (
+      profile.support !== "unsupported" &&
+      profile.profiles.some((value) => selection.profiles.includes(value))
+    );
+  });
+}
+
+function byBytes(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function publicBundle(bundle: AgentBundle, selection?: InspectSelection): unknown {
+  // A component is kept when it reaches *any* selected target: it is relevant
+  // to the selection if it reaches part of it.
+  const reaches = (component: MarkdownComponent): boolean =>
+    !selection || selection.targets.some((target) => selected(component, target));
+  const visible = (feature: FeatureKey): boolean =>
+    !selection || featureVisible(feature, selection);
+
+  const skills = bundle.skills.filter(reaches);
+  const agents = bundle.agents.filter(reaches);
+  const rules = bundle.rules.filter(reaches);
+  const kept = new Set([...skills, ...agents].map((component) => component.name));
+  const keptSkills = new Set(skills.map((skill) => skill.name));
+
+  const filter: InspectFilter | undefined = selection
+    ? {
+        targets: selection.targets,
+        profiles: selection.profiles,
+        excluded: {
+          skills: bundle.skills
+            .filter((c) => !reaches(c))
+            .map((c) => c.name)
+            .sort(byBytes),
+          agents: bundle.agents
+            .filter((c) => !reaches(c))
+            .map((c) => c.name)
+            .sort(byBytes),
+          rules: bundle.rules
+            .filter((c) => !reaches(c))
+            .map((c) => c.name)
+            .sort(byBytes),
+        },
+        unsupported: INSPECTED_FEATURES.filter(
+          (feature) => !featureVisible(feature, selection),
+        ).sort(byBytes),
+      }
+    : undefined;
+
   return {
     schemaVersion: bundle.schemaVersion,
     name: bundle.name,
@@ -300,39 +420,69 @@ function publicBundle(bundle: AgentBundle): unknown {
     description: bundle.description,
     legacy: bundle.legacy,
     components: {
-      skills: bundle.skills.map(({ name, description, path: source, metadata }) => ({
-        name,
-        description,
-        source,
-        metadata,
-      })),
-      agents: bundle.agents.map(({ name, description, path: source, metadata }) => ({
-        name,
-        description,
-        source,
-        metadata,
-      })),
-      rules: bundle.rules.map(
-        ({ name, description, path: source, activation, globs, metadata }) => ({
-          name,
-          description,
-          source,
-          activation,
-          globs,
-          metadata,
-        }),
-      ),
-      hooks: bundle.hooks,
-      hookFiles: bundle.hookFiles.map((file) => file.path),
-      policies: bundle.policies,
-      mcp: bundle.mcp,
-      assets: bundle.assets.map((asset) => asset.path),
+      ...(visible("skills")
+        ? {
+            skills: skills.map(({ name, description, path: source, metadata }) => ({
+              name,
+              description,
+              source,
+              metadata,
+            })),
+          }
+        : {}),
+      ...(visible("agents")
+        ? {
+            agents: agents.map(({ name, description, path: source, metadata }) => ({
+              name,
+              description,
+              source,
+              metadata,
+            })),
+          }
+        : {}),
+      ...(visible("rules")
+        ? {
+            rules: rules.map(
+              ({ name, description, path: source, activation, globs, metadata }) => ({
+                name,
+                description,
+                source,
+                activation,
+                globs,
+                metadata,
+              }),
+            ),
+          }
+        : {}),
+      // Hooks are plugin-profile only on every target, so `--profile project`
+      // drops the section rather than showing something that is never emitted.
+      ...(visible("hooks")
+        ? { hooks: bundle.hooks, hookFiles: bundle.hookFiles.map((file) => file.path) }
+        : {}),
+      ...(visible("policies") ? { policies: bundle.policies } : {}),
+      ...(visible("mcp") ? { mcp: bundle.mcp } : {}),
+      // Policies, assets, and hook files carry no per-target metadata, so a
+      // target filter cannot narrow them further than the feature check does.
+      ...(visible("assets") ? { assets: bundle.assets.map((asset) => asset.path) } : {}),
     },
-    graph: bundle.graph,
-    targets: bundle.manifest.targets ?? {},
+    graph: selection
+      ? Object.fromEntries(
+          Object.entries(bundle.graph)
+            .filter(([node]) => kept.has(node))
+            .map(([node, refs]) => [node, refs.filter((ref) => keptSkills.has(ref))]),
+        )
+      : bundle.graph,
+    targets: selection
+      ? Object.fromEntries(
+          Object.entries(bundle.manifest.targets ?? {}).filter(([name]) =>
+            selection.targets.includes(name as AgentTarget),
+          ),
+        )
+      : (bundle.manifest.targets ?? {}),
     // Omitted rather than null on a v1 bundle, so existing inspect output is
     // byte-identical for every bundle that predates schemaVersion 2.
     ...(bundle.marketplace ? { marketplace: bundle.marketplace } : {}),
+    ...(filter ? { filter } : {}),
   };
 }
 
@@ -362,6 +512,9 @@ export async function agentConvertAction(source: string, opts: AgentOptions): Pr
   const output = path.resolve(opts.output);
   if (isInside(fs.realpathSync(bundle.root), resolveThroughExistingAncestors(output)))
     throw new Error("Output directory must not be inside the source tree");
+  // Resolved before anything is rendered or written, so an unusable --report
+  // path fails the invocation rather than a run that already touched the tree.
+  const reportPath = opts.report ? resolveReportPath(opts.report, output, bundle.root) : undefined;
   const rendered = renderBundle(bundle, targets, selectedProfiles);
   const report: AgentResult = {
     command: "convert",
@@ -396,6 +549,15 @@ export async function agentConvertAction(source: string, opts: AgentOptions): Pr
     if (!hardValidation && !strictFailure)
       writeAtomically(output, artifacts, targets, selectedProfiles, Boolean(opts.force));
   }
+  if (reportPath) {
+    // Written in every mode, including --dry-run, --check, and a strict
+    // failure. Those modes suppress *artifacts*; an explicitly named path is a
+    // request for diagnostic output, and a failing run is when it matters most.
+    // `ok` is recomputed first because `hasFindings` reads `stale`, which is
+    // only known now.
+    report.ok = !hasFindings(report, Boolean(opts.strict));
+    writeReportFile(reportPath, report, targets);
+  }
   outputResult(report, opts);
 }
 
@@ -412,16 +574,25 @@ export async function agentValidateAction(source: string, opts: AgentOptions): P
 }
 
 export async function agentInspectAction(source: string, opts: AgentOptions): Promise<void> {
+  const targets = resolveTargets(opts.target);
+  // Profile support is a property of a target, so a profile filter with no
+  // target has no defined meaning. Refusing beats guessing.
+  if (opts.profile && !targets.length) throw new Error("--profile requires --target");
+  const selection: InspectSelection | undefined = targets.length
+    ? { targets, profiles: profiles(opts.profile) }
+    : undefined;
   const bundle = loadBundle(source);
   outputResult(
     {
       command: "inspect",
       ok: true,
       source: bundle.root,
-      targets: [],
+      // Left empty without a filter, so unfiltered output is byte-identical.
+      targets: selection ? selection.targets : [],
+      ...(selection ? { profiles: selection.profiles } : {}),
       artifacts: [],
       diagnostics: bundle.diagnostics,
-      bundle: publicBundle(bundle),
+      bundle: publicBundle(bundle, selection),
     },
     opts,
   );

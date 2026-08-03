@@ -441,16 +441,26 @@ should not be the first extensibility mechanism.
 
 ## Smaller, Low-Risk Improvements
 
-These do not need to become major roadmap items:
+These do not need to become major roadmap items.
 
-- Add shell completion generation for Bash, Zsh, Fish, and PowerShell.
-- Add `md audit --baseline <file>` to suppress unchanged known findings while still failing on
-  regressions; make baseline updates explicit and reviewable.
-- Add `md graph --focus <file> --depth <n>` for smaller diagrams and neighborhood reports.
-- Add `md query frontmatter-keys` to inventory schema adoption before writing a formal schema.
-- Add `agent convert --report <file>` so CI can separate the report from rendered artifacts
-  without scraping output.
-- Add target/profile filters to `agent inspect` so large normalized bundles remain readable.
+**Shipped:**
+
+- [`completion <shell>`](../commands/completion.md) generates a static script for Bash, Zsh,
+  Fish, and PowerShell from the same command walk `describe` uses.
+- [`md audit --baseline`](../commands/md-audit.md) suppresses known findings and fails only on
+  regressions; `--write-baseline` makes recording explicit and reviewable. Entries are keyed
+  without a line number, so unrelated edits do not resurface a known finding.
+- [`md graph --focus <file> --depth <n>`](../commands/md-graph.md) projects an undirected
+  neighborhood out of the full graph.
+- [`md query frontmatter-keys`](../commands/md-query.md) inventories top-level key adoption
+  with counts, coverage, and value types.
+- [`agent convert --report <file>`](../commands/agent-convert.md) writes the conversion report
+  to any path, in every mode, without listing it among the artifacts.
+- [`agent inspect --target`/`--profile`](../commands/agent-inspect.md) narrow a large bundle
+  using the renderer's own selection predicate and the target profiles.
+
+**Still open:**
+
 - Add a neutral binary alias in a future major packaging pass while retaining `claude-cli` for
   compatibility; the current name understates the agent-agnostic positioning.
 

@@ -111,6 +111,23 @@ const CONTRACTS: CommandContract[] = [
       "With an id, the schema document is written regardless of --format; --format only affects the index listing.",
   },
 
+  {
+    id: "completion",
+    formats: BASE_FORMATS,
+    defaultFormat: "llm",
+    formatConfigurable: false,
+    outputSchema: null,
+    exitCodes: [
+      OK("Script written to stdout"),
+      { code: 1, meaning: "Unknown shell or invalid format" },
+    ],
+    stream: { success: "stdout" },
+    writes: false,
+    stability: "stable",
+    notes:
+      "The shell script is written verbatim regardless of --format; the script is the payload, so there is no JSON form. It is generated from the same command walk describe uses, so it cannot drift from the real command tree, and it embeds that tree rather than calling back into the CLI, so completing costs no process spawn. Never writes to a shell profile. The update notice is suppressed, because the eval install idiom runs from an interactive rc file where stderr is a TTY.",
+  },
+
   // Agent
   agentCommand("convert", {
     writes: true,
@@ -120,11 +137,13 @@ const CONTRACTS: CommandContract[] = [
       FINDINGS("Validation, compatibility, strict, or stale-output finding"),
     ],
     notes:
-      "All output goes to stdout, including failures. A non-strict conversion may write usable artifacts and still exit 2.",
+      "All output goes to stdout, including failures. A non-strict conversion may write usable artifacts and still exit 2. --report writes the same document as conversion-report.json, provenance included, to an arbitrary path; it differs only in carrying the real dryRun and check values and in including `stale`, which the in-tree artifact is serialized too early to hold. It is written in every mode, including --dry-run, --check, and a strict failure, because an explicitly named path is a request for diagnostic output rather than a build artifact. It is never listed in `artifacts` and never compared by --check, and it is refused inside the source tree or the output directory, where it would read as drift.",
   }),
   agentCommand("validate"),
   agentCommand("inspect", {
     exitCodes: [OK("Bundle inspected"), USAGE, FINDINGS("Bundle findings")],
+    notes:
+      "All output goes to stdout, including the failure result for an invocation error. Without --target the payload is unchanged and `targets` stays empty. --target keeps a component that reaches any selected target, using the renderer's own selection predicate so inspect and convert cannot disagree, and reports the excluded names under `bundle.filter`. --profile drops sections no selected target emits into a selected profile, read from the target profiles rather than branched on the target name, and requires --target because profile support is a property of a target. The graph is pruned to the surviving components rather than left with dangling references.",
   }),
   agentCommand("compat"),
   agentCommand("doctor", {
@@ -223,8 +242,15 @@ const CONTRACTS: CommandContract[] = [
   diagnostic("audit", "Actionable findings", {
     outputSchema: "md-audit",
     ...AUTOMATION,
+    // Only --write-baseline writes, and only to the named baseline file.
+    writes: true,
+    exitCodes: [
+      OK("No findings, or a baseline was written"),
+      USAGE,
+      FINDINGS("Actionable findings"),
+    ],
     notes:
-      "The jsonl and sarif forms carry only the findings; the totals and graph summary have no representation in them.",
+      "The jsonl and sarif forms carry only the findings; the totals and graph summary have no representation in them. --baseline suppresses findings a baseline already records and reports what it suppressed, so exit 2 means regressions only; entries are keyed on checker, workspace-relative path, and message, deliberately not line number. A stale entry means something was fixed and never changes the exit code, and a document this tool did not write is reported as a `baseline` finding rather than silently ignored. --write-baseline records the current findings and exits 0; it is the only audit mode that writes, and it is deliberately not settable from project configuration.",
   }),
   diagnostic("check-urls", "One or more URLs are broken", {
     outputSchema: "md-check-urls",
@@ -244,7 +270,7 @@ const CONTRACTS: CommandContract[] = [
   diagnostic("graph", "Broken or unreachable documents found", {
     outputSchema: "md-graph",
     notes:
-      "--output mermaid|dot writes the diagram to stdout regardless of exit status and ignores --format.",
+      "--output mermaid|dot writes the diagram to stdout regardless of exit status and ignores --format. --focus narrows every output to the documents within --depth undirected hops, and the exit code follows the narrowing. The graph is built from the full selected set first, so inbound, outbound, and deadEnd stay whole-workspace values and a component or cycle is reported whole when any member is in focus — a link leaving the neighborhood is never reported as broken.",
   }),
 
   // Markdown: document inspection
@@ -285,7 +311,7 @@ const CONTRACTS: CommandContract[] = [
   inspection("query", {
     outputSchema: "md-query",
     notes:
-      "Two modes share one kind argument. Without --where, --select, or --group-by the six original kinds emit their historical shapes unchanged. With any of them the kind names an entity (documents, headings, links, tasks, code-blocks, frontmatter) and the payload carries projected rows plus a `fields` column order; --group-by replaces `results` with group objects. So code-blocks emits language groups without composable options and flat rows with them. links-to, duplicates, unused-assets, and missing-h1 reject composable options rather than changing shape, and the predicate options are deliberately not configurable.",
+      "Two modes share one kind argument. Without --where, --select, or --group-by the shortcut kinds emit their historical shapes unchanged. With any of them the kind names an entity (documents, headings, links, tasks, code-blocks, frontmatter) and the payload carries projected rows plus a `fields` column order; --group-by replaces `results` with group objects. So code-blocks emits language groups without composable options and flat rows with them. links-to, duplicates, unused-assets, missing-h1, and frontmatter-keys reject composable options rather than changing shape, and the predicate options are deliberately not configurable. frontmatter-keys is an aggregate — one row per top-level key with a document count and coverage — which the projection model cannot express, so it is a shortcut kind rather than a seventh entity.",
   }),
   inspection("diff", {
     outputSchema: "md-diff",

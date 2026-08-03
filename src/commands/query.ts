@@ -5,15 +5,21 @@ import { requireDirectory } from "../input.js";
 import { outputPath, runtime } from "../runtime.js";
 import { jsonPayload } from "../result.js";
 import { nestedValue } from "../object-path.js";
-import type { EntityKind } from "../query/entities.js";
+import { frontmatterValueType, type EntityKind } from "../query/entities.js";
 import { QueryUsageError, buildPlan, type QueryPlan } from "../query/plan.js";
 import { executePlan, type QueryResult } from "../query/execute.js";
 import { renderQueryText } from "../query/render.js";
 import { explicitOptionKeys } from "../runtime.js";
 
-/** The six historical kinds, whose payloads are frozen. */
+/** The shortcut kinds, whose payloads are frozen. */
 type LegacyKind =
-  "links-to" | "duplicates" | "unused-assets" | "code-blocks" | "tasks" | "missing-h1";
+  | "links-to"
+  | "duplicates"
+  | "unused-assets"
+  | "code-blocks"
+  | "tasks"
+  | "missing-h1"
+  | "frontmatter-keys";
 
 type QueryKind = LegacyKind | EntityKind;
 
@@ -182,12 +188,65 @@ function taskResults(
   return { results, summary: { total: done + pending, done, pending, matched }, count: matched };
 }
 
+/**
+ * Inventories top-level frontmatter key adoption across the workspace.
+ *
+ * An aggregate rather than a composable entity: the `frontmatter` entity emits
+ * one row per key *per document*, while this emits one row per key with a
+ * count, which the projection model has no way to express.
+ */
+function frontmatterKeyResults(files: string[]): {
+  results: unknown[];
+  summary: Record<string, number>;
+  count: number;
+} {
+  let withFrontmatter = 0;
+  const keys = new Map<string, { documents: number; types: Set<string> }>();
+  for (const file of files) {
+    const { frontmatter } = runtime().workspace.document(file);
+    if (frontmatter.status !== "valid") continue;
+    withFrontmatter++;
+    for (const [key, value] of Object.entries(frontmatter.data)) {
+      const seen = keys.get(key) ?? { documents: 0, types: new Set<string>() };
+      seen.documents++;
+      seen.types.add(frontmatterValueType(value));
+      keys.set(key, seen);
+    }
+  }
+  // Byte comparison, not localeCompare: the ordering must not depend on the
+  // ICU build of whichever machine ran the query.
+  const byBytes = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const results = [...keys]
+    .sort(([a], [b]) => byBytes(a, b))
+    .map(([key, seen]) => ({
+      key,
+      documents: seen.documents,
+      // Share of documents that *have* frontmatter, so adding an unrelated
+      // frontmatter-less file does not depress every key's coverage.
+      coverage: withFrontmatter
+        ? Math.round((seen.documents / withFrontmatter) * 10000) / 10000
+        : 0,
+      types: [...seen.types].sort(byBytes),
+    }));
+  return {
+    results,
+    summary: { documents: files.length, withFrontmatter, keys: results.length },
+    count: results.length,
+  };
+}
+
 function textOutput(envelope: QueryEnvelope, human: boolean): string {
   const heading = `${envelope.kind}: ${envelope.count} result(s) in ${envelope.directory}`;
   const lines = [human ? `\x1b[1m${heading}\x1b[0m` : heading];
   if (envelope.summary) {
+    const summary = envelope.summary;
     lines.push(
-      `  total=${envelope.summary.total} done=${envelope.summary.done} pending=${envelope.summary.pending}`,
+      // `tasks` keeps its historical wording; anything else renders generically.
+      envelope.kind === "tasks"
+        ? `  total=${summary.total} done=${summary.done} pending=${summary.pending}`
+        : `  ${Object.entries(summary)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(" ")}`,
     );
   }
   for (const result of envelope.results) lines.push(`  ${JSON.stringify(result)}`);
@@ -201,6 +260,7 @@ const LEGACY_KINDS: LegacyKind[] = [
   "code-blocks",
   "tasks",
   "missing-h1",
+  "frontmatter-keys",
 ];
 
 /** Options that belong to a shortcut kind and have no composable meaning. */
@@ -308,6 +368,8 @@ export async function queryAction(
     results = codeBlockResults(files, opts);
   } else if (kind === "tasks") {
     ({ results, summary, count: resultCount } = taskResults(files, opts));
+  } else if (kind === "frontmatter-keys") {
+    ({ results, summary, count: resultCount } = frontmatterKeyResults(files));
   } else {
     results = files
       .filter(

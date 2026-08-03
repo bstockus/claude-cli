@@ -118,6 +118,26 @@ Exit codes:
 - `1` - Could not reach the registry
 - `2` - A newer version is available
 
+## Shell completion
+
+```bash
+claude-cli completion bash       >> ~/.bashrc
+claude-cli completion zsh        > ~/.zfunc/_claude-cli    # a directory on $fpath
+claude-cli completion fish       > ~/.config/fish/completions/claude-cli.fish
+claude-cli completion powershell >> $PROFILE
+```
+
+The script is generated from the same command tree `describe` walks, so it cannot drift from
+the real commands and options. It completes subcommands, fixed-vocabulary arguments such as
+`md query <kind>`, and enumerated option values — including `--format`, whose values come from
+each command's contract, so `md audit --format` offers `jsonl` and `sarif` while
+`md graph --format` does not. File and directory values defer to the shell's own completion.
+
+The script embeds the command tree rather than calling back into the CLI, so completing costs
+no process spawn; regenerate it after upgrading. `claude-cli` never writes to a shell profile
+itself, and the update notice is suppressed for this command so the `eval` install idiom cannot
+print on every shell start.
+
 ## Common Options
 
 All `md` subcommands support:
@@ -264,6 +284,7 @@ claude-cli agent add hook pre-tool-use ./my-bundle
 claude-cli agent upgrade ./my-bundle --to-schema 2 --check
 claude-cli agent validate ./my-bundle --target all
 claude-cli agent inspect ./my-bundle --format json
+claude-cli agent inspect ./my-bundle --target codex --profile plugin
 claude-cli agent compat
 claude-cli agent compat ./my-bundle --target codex --target cursor
 claude-cli agent specs --format json
@@ -273,6 +294,7 @@ claude-cli agent package ./my-bundle --target all --output ./release --archive
 claude-cli agent audit ./my-bundle --target all --format sarif
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
 claude-cli agent convert ./my-bundle --target all --output ./dist --check
+claude-cli agent convert ./my-bundle --target all --output ./dist --dry-run --report ./ci/convert.json
 ```
 
 `agent import` is the inverse of `agent convert`: it turns an existing native plugin or
@@ -284,6 +306,12 @@ dropped, and every input file gets a provenance row in `import-report.json`.
 component at a time. Both are noninteractive, support `--dry-run`/`--check`, and report a
 machine-readable plan, so an agent can drive them without parsing prompts. `agent add` leaves
 `agent-bundle.yaml` byte-untouched unless a component root actually needs recording.
+
+`agent inspect` accepts `--target` and `--profile` to narrow a large normalized bundle to the
+components that reach the selected targets and the sections the selected profiles emit. It uses
+the renderer's own selection predicate and the target conformance profiles, so it cannot
+disagree with `agent convert`, and it reports what it excluded under `bundle.filter`. Without
+either flag the payload is unchanged.
 
 `--target` is repeatable and accepts `claude-code`, `codex`, `cursor`, or `all`.
 `--profile` accepts `plugin`, `project`, or `both` (the default). Existing nonempty selected
@@ -529,7 +557,20 @@ configured; external URLs stay offline unless enabled explicitly.
 claude-cli md audit
 claude-cli md audit docs --summary --external
 claude-cli md audit docs --no-frontmatter --no-toc
+claude-cli md audit docs --write-baseline .audit-baseline.json
+claude-cli md audit docs --baseline .audit-baseline.json
 ```
+
+A **baseline** records the findings that already exist, so an audit fails only on new ones —
+enough to adopt a check on a large workspace without a flag-day cleanup or a permanently red
+build. Entries are keyed on checker, workspace-relative path, and message, deliberately **not**
+line number, so editing prose above a known finding does not resurface it; each entry carries a
+count, so a second identical finding in the same file is still a regression. Recording is
+explicit and reviewable: `--write-baseline` writes a small sorted JSON document and exits `0`,
+and the two flags cannot be combined. An entry that no longer matches is reported as `stale` and
+never fails the build, and a document this tool did not write is reported as a finding rather
+than silently trusted. `--baseline` is configurable; `--write-baseline` is not, so a checked-in
+config cannot turn the checker into a writer.
 
 Use `--[no-]frontmatter`, `--[no-]graph`, and `--[no-]toc` to select workspace checks.
 Lint selection, concurrency, include/exclude, graph entry, and URL timeout/retry options
@@ -615,11 +656,19 @@ reachability is reported as unevaluated.
 claude-cli md graph docs --entry docs/README.md
 claude-cli md graph docs --output mermaid
 claude-cli md graph docs --output dot
+claude-cli md graph docs --focus docs/commands.md --depth 1
+claude-cli md graph docs --focus docs/commands.md --output mermaid
 ```
 
 `report` (the default) follows `--format`; Mermaid and DOT are deterministic raw stdout
 payloads. Broken targets and unreachable documents exit `2`; informational graph metrics
 do not.
+
+`--focus` narrows the report and the diagrams to the documents within `--depth` undirected
+hops, so a large workspace produces a readable neighborhood instead of an unreadable diagram.
+The walk is undirected so backlinks are included. The graph is analyzed in full first and the
+neighborhood projected from it, so `inbound`/`outbound` counts, components, and cycles stay
+whole-workspace facts and a link leaving the radius is never reported as broken.
 
 #### `md query <kind> [directory]`
 
@@ -634,10 +683,11 @@ claude-cli md query unused-assets --asset-extension .png --asset-extension .svg
 claude-cli md query code-blocks --lang typescript --content
 claude-cli md query tasks --status pending
 claude-cli md query missing-h1
+claude-cli md query frontmatter-keys
 ```
 
-Available kinds are `links-to`, `duplicates`, `unused-assets`, `code-blocks`, `tasks`, and
-`missing-h1`. Duplicate fields are `title`, `slug`, `heading-slug`, and
+Available kinds are `links-to`, `duplicates`, `unused-assets`, `code-blocks`, `tasks`,
+`missing-h1`, and `frontmatter-keys`. Duplicate fields are `title`, `slug`, `heading-slug`, and
 `frontmatter:<key>`. A title comes from string frontmatter `title`, falling back to the first
 level-one heading. Asset scanning uses `assets.extensions` or repeatable
 `--asset-extension` overrides.
@@ -663,9 +713,14 @@ because of a typo. Shortcut options such as `--status` cannot be combined with c
 ones, and predicates are deliberately not configurable so a checked-in one cannot silently
 filter everyone's queries.
 
-Without any composable option the six original kinds emit their historical payloads
+Without any composable option the shortcut kinds emit their historical payloads
 unchanged, so `md query code-blocks` still groups by language while
 `md query code-blocks --select file,line` returns flat rows.
+
+`frontmatter-keys` inventories which top-level frontmatter keys are actually in use, with a
+document count, a coverage share, and the distinct value types seen — the measurement to take
+before writing a formal frontmatter schema. It is an aggregate rather than a seventh entity,
+because one row per key across the workspace is not something the projection model can express.
 
 #### `md index <action> [directory]`
 

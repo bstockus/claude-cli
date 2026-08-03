@@ -101,6 +101,61 @@ function stronglyConnected(files: string[], edges: GraphEdge[]): string[][] {
   return result.sort((a, b) => a[0].localeCompare(b[0]));
 }
 
+/**
+ * Narrows a built graph to the documents within `depth` undirected hops of any
+ * focus file.
+ *
+ * Undirected on purpose: "what touches this document" is the question a
+ * neighborhood report answers, and a directed walk would hide every backlink.
+ *
+ * This projects an already-built graph rather than narrowing the file list
+ * first. Building from a narrowed list would turn every link to an
+ * in-workspace but out-of-radius document into a fabricated `broken` target,
+ * and would recompute `components` and `cycles` over a truncated graph —
+ * reporting a document as cycle-free when it is not.
+ *
+ * `inbound`, `outbound`, and `deadEnd` therefore keep their full-graph values:
+ * they describe the document, not the picture it is being drawn into. A
+ * component or cycle is kept **whole** when any member is in focus, because a
+ * truncated cycle group would read as a self-link that does not exist.
+ */
+export function focusGraph(graph: WorkspaceGraph, focus: string[], depth: number): WorkspaceGraph {
+  const adjacent = new Map(graph.nodes.map((node) => [node.file, new Set<string>()]));
+  for (const edge of graph.edges) {
+    adjacent.get(edge.source)?.add(edge.target);
+    adjacent.get(edge.target)?.add(edge.source);
+  }
+  const kept = new Set<string>();
+  let frontier: string[] = [];
+  for (const file of focus)
+    if (adjacent.has(file) && !kept.has(file)) {
+      kept.add(file);
+      frontier.push(file);
+    }
+  for (let hop = 0; hop < depth; hop++) {
+    const next: string[] = [];
+    for (const file of frontier)
+      for (const neighbour of adjacent.get(file) ?? [])
+        if (!kept.has(neighbour)) {
+          kept.add(neighbour);
+          next.push(neighbour);
+        }
+    if (!next.length) break;
+    frontier = next;
+  }
+  const inFocus = (file: string): boolean => kept.has(file);
+  return {
+    nodes: graph.nodes.filter((node) => inFocus(node.file)),
+    edges: graph.edges.filter((edge) => inFocus(edge.source) && inFocus(edge.target)),
+    broken: graph.broken.filter((edge) => inFocus(edge.source)),
+    components: graph.components.filter((group) => group.some(inFocus)),
+    cycles: graph.cycles.filter((group) => group.some(inFocus)),
+    entries: graph.entries.filter(inFocus),
+    reachabilityEvaluated: graph.reachabilityEvaluated,
+    unreachable: graph.unreachable.filter(inFocus),
+  };
+}
+
 export function buildWorkspaceGraph(
   workspace: Workspace,
   files: string[],

@@ -88,7 +88,8 @@ holds:
 - stderr is a TTY
 - `--format` is not `json`, `jsonl`, or `sarif`, including a format selected by project
   configuration
-- the command is not `check-update`, `describe`, `schema`, or the internal cache refresh
+- the command is not `check-update`, `describe`, `schema`, `completion`, or the internal cache
+  refresh
 
 The same gate also blocks the background refresh, so a non-interactive caller never spawns a
 child process. `describe` reports these conditions under `machineStreams`, read directly from

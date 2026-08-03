@@ -1,24 +1,36 @@
 import fs from "node:fs";
 import path from "node:path";
-import { buildWorkspaceGraph, type WorkspaceGraph } from "../graph.js";
+import { buildWorkspaceGraph, focusGraph, type WorkspaceGraph } from "../graph.js";
 import { outputPath, runtime } from "../runtime.js";
 import { requireDirectory } from "../input.js";
 import { terminate } from "../command-result.js";
 import { jsonPayload } from "../result.js";
+import { boundedInteger } from "../option-utils.js";
 
 interface GraphOptions {
   envelope?: boolean;
   format: string;
   output: "report" | "mermaid" | "dot";
   entry: string[];
+  focus: string[];
+  depth: string;
   include: string[];
   exclude: string[];
 }
 
-function displayed(graph: WorkspaceGraph, opts: GraphOptions): object {
+/** The neighborhood description, present only when --focus was given. */
+interface FocusReport {
+  files: string[];
+  depth: number;
+  nodes: number;
+  omitted: number;
+}
+
+function displayed(graph: WorkspaceGraph, opts: GraphOptions, focus?: FocusReport): object {
   const show = (file: string) => outputPath(file, opts);
   return {
     files: graph.nodes.length,
+    ...(focus ? { focus } : {}),
     nodes: graph.nodes.map((node) => ({ ...node, file: show(node.file) })),
     edges: graph.edges.map((edge) => ({
       ...edge,
@@ -71,14 +83,35 @@ export async function graphAction(directory: string, opts: GraphOptions): Promis
   for (const entry of entries)
     if (!fs.existsSync(entry) || !fs.statSync(entry).isFile())
       throw new Error(`Entry point not found: ${entry}`);
-  const graph = buildWorkspaceGraph(runtime().workspace, files, entries);
+  const full = buildWorkspaceGraph(runtime().workspace, files, entries);
+
+  // The neighborhood is projected from the complete graph, so a link leaving
+  // the radius stays a resolved edge rather than becoming a fabricated broken
+  // target. See focusGraph.
+  let graph = full;
+  let focus: FocusReport | undefined;
+  if (opts.focus.length) {
+    const depth = boundedInteger(opts.depth, "depth", 6);
+    const selected = new Set(full.nodes.map((node) => node.file));
+    const roots = opts.focus.map((file) => path.resolve(file));
+    for (const root of roots)
+      if (!selected.has(root)) throw new Error(`Focus document not in the selected set: ${root}`);
+    graph = focusGraph(full, roots, depth);
+    focus = {
+      files: roots.map((file) => outputPath(file, opts)),
+      depth,
+      nodes: graph.nodes.length,
+      omitted: full.nodes.length - graph.nodes.length,
+    };
+  }
+
   const actionable = graph.broken.length + graph.unreachable.length;
   if (opts.output !== "report") {
     process.stdout.write(rawGraph(graph, opts) + "\n");
     if (actionable) terminate(2);
     return;
   }
-  const report = displayed(graph, opts);
+  const report = displayed(graph, opts, focus);
   if (opts.format === "json") {
     (actionable ? process.stderr : process.stdout).write(
       jsonPayload("md graph", report, opts, {
@@ -98,6 +131,11 @@ export async function graphAction(directory: string, opts: GraphOptions): Promis
     };
     const lines = [
       `Graph: ${value.files} document(s), ${graph.edges.length} edge(s)`,
+      ...(focus
+        ? [
+            `Focus: ${focus.files.join(", ")} at depth ${focus.depth} (${focus.omitted} document(s) omitted)`,
+          ]
+        : []),
       `Broken targets: ${value.broken.length}`,
       `Reachability: ${value.reachabilityEvaluated ? `${value.unreachable.length} unreachable` : "not evaluated (no entry points)"}`,
       `Dead ends: ${value.deadEnds.length}`,

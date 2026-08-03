@@ -12,6 +12,7 @@ import { splitLocalTarget } from "../link-target.js";
 import { resolveMarkdownInputs } from "../input-selection.js";
 import { outputPath, runtime } from "../runtime.js";
 import { jsonPayload } from "../result.js";
+import { boundedInteger } from "../option-utils.js";
 
 interface ContextOptions {
   envelope?: boolean;
@@ -32,18 +33,6 @@ function resolveFormat(opts: ContextOptions): OutputFormat {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";
-}
-
-function boundedInteger(value: string, name: string, max?: number): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0 || (max !== undefined && parsed > max)) {
-    throw new Error(
-      max === undefined
-        ? `--${name} must be a non-negative integer`
-        : `--${name} must be an integer from 0 to ${max}`,
-    );
-  }
-  return parsed;
 }
 
 /**

@@ -14,18 +14,19 @@ exit `0`.
 Two modes share the `kind` argument, and which one runs is decided by whether any composable
 option was given.
 
-| Given                                     | Mode           | `kind` names                  |
-| ----------------------------------------- | -------------- | ----------------------------- |
-| No `--where`, `--select`, or `--group-by` | **Shortcut**   | One of the six original kinds |
-| Any of them                               | **Composable** | An entity                     |
+| Given                                     | Mode           | `kind` names              |
+| ----------------------------------------- | -------------- | ------------------------- |
+| No `--where`, `--select`, or `--group-by` | **Shortcut**   | One of the shortcut kinds |
+| Any of them                               | **Composable** | An entity                 |
 
 The shortcut kinds emit their historical payloads **unchanged**. `code-blocks` therefore
 returns language groups on its own and flat rows once a composable option is present; that is
 recorded rather than reconciled, because changing either shape would break consumers.
 
-`links-to`, `duplicates`, `unused-assets`, and `missing-h1` **reject** composable options
-rather than growing a second shape. The error names the entity form that answers the same
-question, for example `md query documents --where '!has:h1'` for `missing-h1`.
+`links-to`, `duplicates`, `unused-assets`, `missing-h1`, and `frontmatter-keys` **reject**
+composable options rather than growing a second shape. The error names the entity form that
+answers the same question, for example `md query documents --where '!has:h1'` for
+`missing-h1`.
 
 ## Arguments
 
@@ -36,17 +37,42 @@ question, for example `md query documents --where '!has:h1'` for `missing-h1`.
 
 ## Shortcut kinds
 
-| Kind            | Relevant options        | Result                                                                    |
-| --------------- | ----------------------- | ------------------------------------------------------------------------- |
-| `links-to`      | `--target` (required)   | Links resolving to a path and optional heading fragment.                  |
-| `duplicates`    | `--field`               | Duplicate `title`, `slug`, `heading-slug`, or `frontmatter:<key>` values. |
-| `unused-assets` | `--asset-extension`     | Selected assets not referenced by selected Markdown.                      |
-| `code-blocks`   | `--lang`, `--content`   | Fenced code blocks, optionally filtered and expanded.                     |
-| `tasks`         | `--status`, `--summary` | GFM tasks or aggregate completion totals.                                 |
-| `missing-h1`    | None                    | Documents without a level-one heading.                                    |
+| Kind               | Relevant options        | Result                                                                    |
+| ------------------ | ----------------------- | ------------------------------------------------------------------------- |
+| `links-to`         | `--target` (required)   | Links resolving to a path and optional heading fragment.                  |
+| `duplicates`       | `--field`               | Duplicate `title`, `slug`, `heading-slug`, or `frontmatter:<key>` values. |
+| `unused-assets`    | `--asset-extension`     | Selected assets not referenced by selected Markdown.                      |
+| `code-blocks`      | `--lang`, `--content`   | Fenced code blocks, optionally filtered and expanded.                     |
+| `tasks`            | `--status`, `--summary` | GFM tasks or aggregate completion totals.                                 |
+| `missing-h1`       | None                    | Documents without a level-one heading.                                    |
+| `frontmatter-keys` | None                    | Top-level frontmatter keys, with adoption counts and value types.         |
 
 For duplicate titles, string frontmatter `title` takes precedence over the first level-one
 heading.
+
+### `frontmatter-keys`
+
+Inventories which top-level frontmatter keys are actually in use, which is the measurement to
+take **before** writing a formal schema. Only top-level keys are counted; nested mappings are
+not walked, because a schema is written against the keys authors type.
+
+```jsonc
+{
+  "kind": "frontmatter-keys",
+  "count": 4,
+  "results": [{ "key": "owner", "documents": 12, "coverage": 0.4286, "types": ["string"] }],
+  "summary": { "documents": 40, "withFrontmatter": 28, "keys": 4 },
+}
+```
+
+`coverage` is `documents` divided by `summary.withFrontmatter`, rounded to four decimals — the
+share of documents that _have_ frontmatter, so adding an unrelated frontmatter-less file does
+not depress every key's coverage. Documents whose frontmatter is missing, malformed, or not a
+mapping contribute nothing and are excluded from `withFrontmatter`.
+
+`types` lists the distinct value types seen across documents; more than one entry means the key
+is used inconsistently, which is usually the thing worth fixing. Rows are sorted by key in byte
+order.
 
 ## Entities and fields
 

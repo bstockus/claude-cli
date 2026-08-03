@@ -189,6 +189,9 @@ describe("isNotifierAllowed", () => {
   it("stays quiet for the contract discovery commands", () => {
     expect(isNotifierAllowed({ ...allowedCtx, argv: ["describe"] })).toBe(false);
     expect(isNotifierAllowed({ ...allowedCtx, argv: ["schema", "md-graph"] })).toBe(false);
+    // `eval "$(claude-cli completion zsh)"` runs from an interactive rc file,
+    // where stderr is a TTY — the notice would print on every shell start.
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["completion", "zsh"] })).toBe(false);
   });
 
   it("enforces every condition the published contract lists", () => {
@@ -205,7 +208,7 @@ describe("isNotifierAllowed", () => {
         ...allowedCtx,
         argv: ["md", "lint", "--format=sarif"],
       },
-      "the command is check-update, describe, schema, or the internal cache refresh": {
+      "the command is check-update, describe, schema, completion, or the internal cache refresh": {
         ...allowedCtx,
         argv: ["describe"],
       },

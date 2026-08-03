@@ -114,6 +114,18 @@ const task = (source: RowSource): MdTask => source.node as MdTask;
 const block = (source: RowSource): MdCodeBlock => source.node as MdCodeBlock;
 const entry = (source: RowSource): FrontmatterEntry => source.node as FrontmatterEntry;
 
+/**
+ * The type label reported for a frontmatter value.
+ *
+ * Shared with `md query frontmatter-keys`, so the shortcut kind and the
+ * composable entity can never disagree about what a value is.
+ */
+export function frontmatterValueType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
 export const SPECS: Record<EntityKind, EntitySpec> = {
   documents: {
     kind: "documents",

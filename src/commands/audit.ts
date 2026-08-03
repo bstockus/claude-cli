@@ -13,6 +13,14 @@ import type { Issue } from "../types.js";
 import { formatDiagnostics } from "../automation.js";
 import { changedMarkdownFiles } from "../input-selection.js";
 import { jsonPayload } from "../result.js";
+import { packageName, packageVersion } from "../version.js";
+import {
+  applyBaseline,
+  buildBaseline,
+  readBaseline,
+  writeBaseline,
+  type BaselineEntry,
+} from "../audit-baseline.js";
 
 interface AuditOptions extends TocOptions {
   envelope?: boolean;
@@ -32,6 +40,15 @@ interface AuditOptions extends TocOptions {
   timeout: string;
   retry: string;
   changedSince?: string;
+  baseline?: string;
+  writeBaseline?: string;
+}
+
+/** The suppression report, present only when --baseline was given. */
+interface BaselineReport {
+  path: string;
+  suppressed: number;
+  stale: BaselineEntry[];
 }
 
 interface AuditResult {
@@ -46,6 +63,7 @@ interface AuditResult {
     byFile: Record<string, number>;
   };
   findings: Issue[];
+  baseline?: BaselineReport;
   graph?: {
     nodes: number;
     edges: number;
@@ -224,6 +242,46 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
   findings.sort(
     (a, b) => a.checker.localeCompare(b.checker) || a.file.localeCompare(b.file) || a.line - b.line,
   );
+
+  const root = runtime().config.root;
+  if (opts.writeBaseline) {
+    // Recording is a separate act from checking: writing the file a run is
+    // simultaneously being judged against has no meaning.
+    if (opts.baseline) throw new Error("--baseline and --write-baseline cannot be combined");
+    writeBaseline(
+      opts.writeBaseline,
+      buildBaseline(findings, root, { name: packageName, version: packageVersion }),
+    );
+    process.stdout.write(
+      `Wrote ${findings.length} baseline entr${findings.length === 1 ? "y" : "ies"} to ${opts.writeBaseline}\n`,
+    );
+    return;
+  }
+
+  let baseline: BaselineReport | undefined;
+  if (opts.baseline) {
+    const applied = applyBaseline(findings, readBaseline(opts.baseline), root);
+    if (applied.foreign) {
+      findings.push({
+        file: path.resolve(opts.baseline),
+        line: 1,
+        checker: "baseline",
+        message: "Not a claude-cli-md-audit-baseline document; no findings were suppressed",
+      });
+      findings.sort(
+        (a, b) =>
+          a.checker.localeCompare(b.checker) || a.file.localeCompare(b.file) || a.line - b.line,
+      );
+    } else {
+      findings = applied.kept;
+    }
+    baseline = {
+      path: outputPath(path.resolve(opts.baseline), opts),
+      suppressed: applied.suppressed,
+      stale: applied.stale,
+    };
+  }
+
   const shown = findings.map((issue) => ({ ...issue, file: outputPath(issue.file, opts) }));
   const byCheck: Record<string, number> = Object.fromEntries(enabled.map((check) => [check, 0]));
   const byFile: Record<string, number> = {};
@@ -245,6 +303,7 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
       byFile,
     },
     findings: shown,
+    ...(baseline ? { baseline } : {}),
     ...(graph
       ? {
           graph: {
@@ -260,34 +319,54 @@ export async function auditAction(directory: string, opts: AuditOptions): Promis
         }
       : {}),
   };
+  // One value decides the payload counts, the stream, and the exit code.
+  // Reading `findings` for the stream while the payload counted `shown` was a
+  // latent split that baseline suppression would have turned into a real bug.
+  const actionable = shown.length;
+  // Suppression and staleness are described, never judged: a stale entry means
+  // something was fixed, which must not fail a build.
+  const baselineLines = baseline
+    ? [
+        `Baseline: ${baseline.suppressed} suppressed, ${baseline.stale.length} stale (${baseline.path})`,
+      ]
+    : [];
   let payload: string;
   if (opts.format === "json")
     payload = jsonPayload("md audit", result, opts, {
-      exitCode: shown.length ? 2 : 0,
-      summary: { findings: shown.length, files: result.totals.files },
+      exitCode: actionable ? 2 : 0,
+      summary: {
+        findings: actionable,
+        files: result.totals.files,
+        ...(baseline ? { suppressed: baseline.suppressed } : {}),
+      },
     }).trimEnd();
   else if (opts.format === "jsonl" || opts.format === "sarif")
     payload = formatDiagnostics(shown, opts.format, {
       files: files.length,
-      findings: shown.length,
+      findings: actionable,
       enabled,
       skipped,
+      ...(baseline ? { suppressed: baseline.suppressed } : {}),
     })!;
   else if (opts.summary)
     payload = [
       `Audit: ${result.totals.files} file(s), ${result.totals.findings} finding(s)`,
+      ...baselineLines,
       ...Object.entries(byCheck).map(([check, count]) => `  ${check}: ${count}`),
       ...Object.entries(byFile).map(([file, count]) => `  ${file}: ${count}`),
     ].join("\n");
   else
-    payload = shown.length
-      ? [
-          `${shown.length} audit finding(s) in ${result.directory}:`,
-          ...shown.map(
-            (issue) => `  ${issue.file}:${issue.line} [${issue.checker}] ${issue.message}`,
-          ),
-        ].join("\n")
-      : `Audit passed for ${files.length} file(s) in ${result.directory}`;
-  (findings.length ? process.stderr : process.stdout).write(payload + "\n");
-  if (findings.length) terminate(2);
+    payload = (
+      actionable
+        ? [
+            `${actionable} audit finding(s) in ${result.directory}:`,
+            ...shown.map(
+              (issue) => `  ${issue.file}:${issue.line} [${issue.checker}] ${issue.message}`,
+            ),
+            ...baselineLines,
+          ]
+        : [`Audit passed for ${files.length} file(s) in ${result.directory}`, ...baselineLines]
+    ).join("\n");
+  (actionable ? process.stderr : process.stdout).write(payload + "\n");
+  if (actionable) terminate(2);
 }

@@ -1105,6 +1105,56 @@ describe("CLI e2e", () => {
     }
   });
 
+  it("narrows the graph and the diagram to a focus neighborhood", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "graph-focus-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "hub.md"), "[Near](near.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "near.md"), "[Far](far.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "far.md"), "# Far\n");
+      fs.writeFileSync(path.join(tmpDir, "island.md"), "# Island\n");
+      const hub = path.join(tmpDir, "hub.md");
+
+      const one = await runCli("md", "graph", tmpDir, "--focus", hub, "--depth", "1", "-fj");
+      expect(one.exitCode).toBe(0);
+      const payload = JSON.parse(one.stdout);
+      expect(payload.focus).toEqual({ files: [hub], depth: 1, nodes: 2, omitted: 2 });
+      expect(payload.nodes.map((n: { file: string }) => n.file)).toEqual([
+        path.join(tmpDir, "hub.md"),
+        path.join(tmpDir, "near.md"),
+      ]);
+
+      // The diagram is the point of the flag; it must shrink too.
+      const diagram = await runCli(
+        "md",
+        "graph",
+        tmpDir,
+        "--focus",
+        hub,
+        "--depth",
+        "0",
+        "--output",
+        "mermaid",
+      );
+      expect(diagram.exitCode).toBe(0);
+      expect(diagram.stdout.trim().split("\n")).toHaveLength(2);
+
+      // An unfocused run carries no focus block at all.
+      const plain = JSON.parse((await runCli("md", "graph", tmpDir, "-fj")).stdout);
+      expect(plain.focus).toBeUndefined();
+      expect(plain.files).toBe(4);
+
+      const missing = await runCli("md", "graph", tmpDir, "--focus", path.join(tmpDir, "nope.md"));
+      expect(missing.exitCode).toBe(1);
+      expect(missing.stderr).toContain("Focus document not in the selected set");
+
+      const bad = await runCli("md", "graph", tmpDir, "--focus", hub, "--depth", "9");
+      expect(bad.exitCode).toBe(1);
+      expect(bad.stderr).toContain("--depth must be an integer from 0 to 6");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("validates configured frontmatter schema and shortcut rules", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "frontmatter-e2e-"));
     try {
@@ -1158,6 +1208,98 @@ describe("CLI e2e", () => {
       const result = await runCliIn(tmpDir, "md", "audit", "--summary");
       expect(result.exitCode).toBe(2);
       expect(result.stderr).toContain("toc: 1");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("suppresses baselined audit findings but still fails on regressions", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audit-baseline-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, ".claude-cli.yml"), "version: 1\n");
+      fs.writeFileSync(path.join(tmpDir, "a.md"), "# A\n\n[gone](./missing.md)\n");
+      fs.writeFileSync(path.join(tmpDir, "b.md"), "# B\n\n[gone](./nope.md)\n");
+      const baseline = path.join(tmpDir, "audit-baseline.json");
+
+      expect((await runCliIn(tmpDir, "md", "audit")).exitCode).toBe(2);
+
+      // Recording exits 0 even though the run found something.
+      const written = await runCliIn(tmpDir, "md", "audit", "--write-baseline", baseline);
+      expect(written.exitCode).toBe(0);
+      expect(written.stdout).toContain("Wrote 2 baseline entries");
+      const document = JSON.parse(fs.readFileSync(baseline, "utf-8"));
+      expect(document.baselineFormat).toBe("claude-cli-md-audit-baseline");
+      // Workspace-relative, so the file survives a checkout elsewhere.
+      expect(document.entries.map((e: { file: string }) => e.file)).toEqual(["a.md", "b.md"]);
+
+      const clean = await runCliIn(tmpDir, "md", "audit", "--baseline", baseline, "-fj");
+      expect(clean.exitCode).toBe(0);
+      const payload = JSON.parse(clean.stdout);
+      expect(payload.findings).toEqual([]);
+      expect(payload.totals.findings).toBe(0);
+      expect(payload.baseline).toMatchObject({ suppressed: 2, stale: [] });
+
+      // Line drift must not resurface a known finding.
+      fs.writeFileSync(
+        path.join(tmpDir, "a.md"),
+        "# A\n\nfiller\n\nmore\n\n[gone](./missing.md)\n",
+      );
+      expect((await runCliIn(tmpDir, "md", "audit", "--baseline", baseline)).exitCode).toBe(0);
+
+      // A genuinely new finding still fails, and only it is reported.
+      fs.writeFileSync(path.join(tmpDir, "c.md"), "# C\n\n[new](./brand-new.md)\n");
+      const regressed = await runCliIn(tmpDir, "md", "audit", "--baseline", baseline);
+      expect(regressed.exitCode).toBe(2);
+      expect(regressed.stderr).toContain("brand-new.md");
+      expect(regressed.stderr).not.toContain("missing.md");
+
+      // Fixing a baselined finding leaves a stale entry, which never fails.
+      fs.rmSync(path.join(tmpDir, "c.md"));
+      fs.writeFileSync(path.join(tmpDir, "b.md"), "# B\n");
+      const fixed = await runCliIn(tmpDir, "md", "audit", "--baseline", baseline, "-fj");
+      expect(fixed.exitCode).toBe(0);
+      expect(JSON.parse(fixed.stdout).baseline.stale).toEqual([
+        {
+          checker: "graph/broken",
+          file: "b.md",
+          message: "Markdown target not found: ./nope.md",
+          count: 1,
+        },
+      ]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects combining baseline flags and reports a foreign baseline as a finding", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audit-baseline-bad-e2e-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, ".claude-cli.yml"), "version: 1\n");
+      fs.writeFileSync(path.join(tmpDir, "a.md"), "# A\n\n[gone](./missing.md)\n");
+      const baseline = path.join(tmpDir, "b.json");
+
+      const both = await runCliIn(
+        tmpDir,
+        "md",
+        "audit",
+        "--baseline",
+        baseline,
+        "--write-baseline",
+        baseline,
+      );
+      expect(both.exitCode).toBe(1);
+      expect(both.stderr).toContain("cannot be combined");
+
+      const missing = await runCliIn(tmpDir, "md", "audit", "--baseline", baseline);
+      expect(missing.exitCode).toBe(1);
+      expect(missing.stderr).toContain("does not exist");
+
+      // A document from some other tool is reported, not silently trusted.
+      fs.writeFileSync(baseline, JSON.stringify({ bomFormat: "something-else" }));
+      const foreign = await runCliIn(tmpDir, "md", "audit", "--baseline", baseline);
+      expect(foreign.exitCode).toBe(2);
+      expect(foreign.stderr).toContain("[baseline]");
+      expect(foreign.stderr).toContain("missing.md");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -1880,6 +2022,34 @@ describe("md query composable predicates", () => {
       const blocks = JSON.parse((await runCliIn(dir, "md", "query", "code-blocks", "-fj")).stdout);
       expect(blocks.results[0]).toMatchObject({ language: "ts", count: 1 });
       expect(blocks.fields).toBeUndefined();
+    });
+  });
+
+  it("inventories top-level frontmatter keys", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(dir, "md", "query", "frontmatter-keys", "-fj");
+      expect(result.exitCode).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      expect(payload.kind).toBe("frontmatter-keys");
+      // Sorted by key in byte order, and `coverage` is a share of the
+      // documents that have frontmatter, not of every selected document.
+      expect(payload.results).toEqual([
+        { key: "owner", documents: 2, coverage: 1, types: ["string"] },
+        { key: "tags", documents: 1, coverage: 0.5, types: ["array"] },
+      ]);
+      expect(payload.summary).toEqual({ documents: 2, withFrontmatter: 2, keys: 2 });
+      expect(payload.count).toBe(2);
+      // An aggregate kind carries no projection.
+      expect(payload.fields).toBeUndefined();
+    });
+  });
+
+  it("rejects composable options on frontmatter-keys with the entity form to use", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(dir, "md", "query", "frontmatter-keys", "--select", "key");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("does not support composable options");
+      expect(result.stderr).toContain("md query frontmatter --select key --group-by key");
     });
   });
 

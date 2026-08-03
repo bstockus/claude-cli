@@ -115,6 +115,22 @@ export const mdGraphSchema: SchemaEntry = {
     ],
     properties: {
       files: { type: "integer", minimum: 0 },
+      focus: {
+        description:
+          "The neighborhood that was reported. Present only when --focus was given. Node counts and structural groups are still derived from the whole graph.",
+        type: "object",
+        required: ["files", "depth", "nodes", "omitted"],
+        properties: {
+          files: stringArray,
+          depth: { type: "integer", minimum: 0, maximum: 6 },
+          nodes: { type: "integer", minimum: 0 },
+          omitted: {
+            type: "integer",
+            minimum: 0,
+            description: "Selected documents outside the neighborhood.",
+          },
+        },
+      },
       nodes: { type: "array", items: { $ref: "#/$defs/node" } },
       edges: { type: "array", items: { $ref: "#/$defs/edge" } },
       broken: { type: "array", items: { $ref: "#/$defs/brokenEdge" } },
@@ -196,6 +212,17 @@ export const mdAuditSchema: SchemaEntry = {
         },
       },
       findings: { type: "array", items: { $ref: "#/$defs/issue" } },
+      baseline: {
+        description:
+          "Baseline suppression. Present only when --baseline was given. Never affects the exit code by itself: `stale` records entries that matched nothing, which means something was fixed.",
+        type: "object",
+        required: ["path", "suppressed", "stale"],
+        properties: {
+          path: { type: "string" },
+          suppressed: { type: "integer", minimum: 0 },
+          stale: { type: "array", items: { $ref: "#/$defs/baselineEntry" } },
+        },
+      },
       graph: {
         description: "Omitted entirely when the graph check is disabled.",
         type: "object",
@@ -211,7 +238,21 @@ export const mdAuditSchema: SchemaEntry = {
         },
       },
     },
-    $defs: { issue: ISSUE_DEF },
+    $defs: {
+      issue: ISSUE_DEF,
+      baselineEntry: {
+        type: "object",
+        description:
+          "One recorded finding. Keyed without a line number, so `count` carries multiplicity: a second identical finding in the same file is a regression.",
+        required: ["checker", "file", "message", "count"],
+        properties: {
+          checker: { type: "string" },
+          file: { type: "string", description: "Workspace-relative, with `/` separators." },
+          message: { type: "string" },
+          count: { type: "integer", minimum: 1 },
+        },
+      },
+    },
   },
 };
 
@@ -241,6 +282,7 @@ export const mdQuerySchema: SchemaEntry = {
           "headings",
           "links",
           "frontmatter",
+          "frontmatter-keys",
         ],
       },
       fields: {
@@ -265,6 +307,7 @@ export const mdQuerySchema: SchemaEntry = {
             { $ref: "#/$defs/codeBlockResult" },
             { $ref: "#/$defs/taskResult" },
             { $ref: "#/$defs/fileResult" },
+            { $ref: "#/$defs/frontmatterKeyResult" },
             { $ref: "#/$defs/projectedRow" },
             { $ref: "#/$defs/groupResult" },
           ],
@@ -272,7 +315,7 @@ export const mdQuerySchema: SchemaEntry = {
       },
       summary: {
         description:
-          "Task totals for kind 'tasks' without composable options; { matched, groups } for a grouped composable query.",
+          "Task totals for kind 'tasks' without composable options; { documents, withFrontmatter, keys } for 'frontmatter-keys'; { matched, groups } for a grouped composable query.",
         ...countMap,
       },
     },
@@ -388,6 +431,27 @@ export const mdQuerySchema: SchemaEntry = {
         type: "object",
         required: ["file"],
         properties: { file: { type: "string" } },
+      },
+      frontmatterKeyResult: {
+        type: "object",
+        description:
+          "One top-level frontmatter key, for kind 'frontmatter-keys'. Nested keys are not inventoried.",
+        required: ["key", "documents", "coverage", "types"],
+        properties: {
+          key: { type: "string" },
+          documents: { type: "integer", minimum: 1 },
+          coverage: {
+            type: "number",
+            minimum: 0,
+            maximum: 1,
+            description:
+              "documents divided by the number of documents with valid frontmatter, rounded to four decimals.",
+          },
+          types: {
+            description: "Distinct value types seen: null, array, or a typeof result.",
+            ...stringArray,
+          },
+        },
       },
     },
   },

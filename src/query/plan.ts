@@ -235,6 +235,7 @@ export function buildPlan(input: PlanInput): QueryPlan {
     const replacement: Record<string, string> = {
       "missing-h1": " Try: md query documents --where '!has:h1'",
       "links-to": " Try: md query links --where links-to:<path>",
+      "frontmatter-keys": " Try: md query frontmatter --select key --group-by key",
     };
     throw new QueryUsageError(
       `${input.kind} does not support composable options. Entities: ${ENTITY_KINDS.join(", ")}.${replacement[input.kind] ?? ""}`,

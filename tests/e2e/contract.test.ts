@@ -55,6 +55,26 @@ function staleToc(): string {
   return root;
 }
 
+/**
+ * A baseline recording a finding that no longer occurs, so the payload carries
+ * a populated `stale` list and the `baselineEntry` shape is actually validated.
+ */
+function auditBaseline(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "contract-baseline-"));
+  temporary.push(root);
+  const file = path.join(root, "baseline.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      baselineFormat: "claude-cli-md-audit-baseline",
+      version: "1",
+      generator: { name: "@bstockus/claude-cli", version: "0.0.0" },
+      entries: [{ checker: "toc", file: "gone.md", message: "stale", count: 1 }],
+    }),
+  );
+  return file;
+}
+
 function bundle(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "contract-bundle-"));
   temporary.push(root);
@@ -179,7 +199,12 @@ describe("declared output schemas match real output", () => {
   interface Case {
     label: string;
     schema: string;
-    args: (context: { workspace: string; bundle: string; staleToc: string }) => string[];
+    args: (context: {
+      workspace: string;
+      bundle: string;
+      staleToc: string;
+      auditBaseline: string;
+    }) => string[];
     outcome: "success" | "findings";
     exitCode: number;
   }
@@ -228,6 +253,21 @@ describe("declared output schemas match real output", () => {
       exitCode: 0,
     },
     {
+      label: "md audit --baseline",
+      schema: "md-audit",
+      args: (c) => [
+        "md",
+        "audit",
+        c.workspace,
+        "--no-external",
+        "--baseline",
+        c.auditBaseline,
+        "-fj",
+      ],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "md query tasks",
       schema: "md-query",
       args: (c) => ["md", "query", "tasks", c.workspace, "-fj"],
@@ -238,6 +278,13 @@ describe("declared output schemas match real output", () => {
       label: "md query links-to",
       schema: "md-query",
       args: (c) => ["md", "query", "links-to", c.workspace, "--target", "clean.md", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md query frontmatter-keys",
+      schema: "md-query",
+      args: (c) => ["md", "query", "frontmatter-keys", c.workspace, "-fj"],
       outcome: "success",
       exitCode: 0,
     },
@@ -392,6 +439,13 @@ describe("declared output schemas match real output", () => {
       exitCode: 0,
     },
     {
+      label: "agent inspect --target",
+      schema: "agent-result",
+      args: (c) => ["agent", "inspect", c.bundle, "--target", "codex", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "agent validate (invocation failure)",
       schema: "agent-result",
       args: (c) => ["agent", "validate", path.join(c.workspace, "absent"), "-fj"],
@@ -464,7 +518,12 @@ describe("declared output schemas match real output", () => {
   ];
 
   it.each(cases)("$label", async (testCase) => {
-    const context = { workspace: workspace(), bundle: bundle(), staleToc: staleToc() };
+    const context = {
+      workspace: workspace(),
+      bundle: bundle(),
+      staleToc: staleToc(),
+      auditBaseline: auditBaseline(),
+    };
     const args = testCase.args(context);
     const result = await run(...args);
 

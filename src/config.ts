@@ -91,7 +91,7 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "dryRun",
     "stdinName",
   ]),
-  graph: new Set(["format", "paths", "output", "entry", "include", "exclude"]),
+  graph: new Set(["format", "paths", "output", "entry", "focus", "depth", "include", "exclude"]),
   "validate-frontmatter": new Set([
     "format",
     "paths",
@@ -120,6 +120,11 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "timeout",
     "retry",
     "changedSince",
+    // `writeBaseline` is deliberately absent, on the same rule as `md fix`: a
+    // checked-in config must not be able to turn a checker into a writer.
+    // Reading a baseline is configurable because CI is exactly where it
+    // belongs, and suppression is never silent — the payload reports it.
+    "baseline",
   ]),
   stats: new Set(["format", "paths", "stdinName"]),
   "code-blocks": new Set(["format", "paths", "lang", "content", "stdinName"]),

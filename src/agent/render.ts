@@ -51,7 +51,14 @@ function targetOverride(
     : {};
 }
 
-function selected(component: MarkdownComponent, target: AgentTarget): boolean {
+/**
+ * Whether a component reaches a target at all.
+ *
+ * Exported so `agent inspect --target` filters on exactly the predicate the
+ * renderer uses; a reimplementation would eventually disagree with `convert`
+ * about which components exist.
+ */
+export function selected(component: MarkdownComponent, target: AgentTarget): boolean {
   const override = targetOverride(component, target);
   const include = component.metadata.include;
   const exclude = component.metadata.exclude;
