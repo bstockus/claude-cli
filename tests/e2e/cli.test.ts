@@ -1638,7 +1638,7 @@ describe("md fix", () => {
       expect(payload.edits).toBe(1);
       // Guards against a plan that "fails" for the wrong reason.
       expect(payload.conflicts).toEqual([]);
-      expect(payload.rules).toEqual(["toc"]);
+      expect(payload.rules).toEqual(["markdownlint", "relative-links", "toc"]);
       const after = fs.statSync(path.join(dir, "doc.md"));
       expect(after.mtimeMs).toBe(before.mtimeMs);
       expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
@@ -1733,6 +1733,54 @@ describe("md fix", () => {
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toMatch(/Unknown commands\.fix key: write/);
       expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("runs every fixer by default and can be narrowed with --rule", async () => {
+    await inWorkspace(async (dir) => {
+      fs.mkdirSync(path.join(dir, "docs"));
+      fs.writeFileSync(path.join(dir, "docs", "b.md"), "# B\n");
+      fs.writeFileSync(
+        path.join(dir, "docs", "a.md"),
+        "# A\n\ntrailing   \n\n[x](./sub/../b.md)\n",
+      );
+
+      const all = await runCliIn(dir, "md", "fix", "docs", "-fj");
+      expect(all.exitCode).toBe(2);
+      const payload = JSON.parse(all.stderr);
+      expect(payload.rules).toEqual(["markdownlint", "relative-links", "toc"]);
+      const rules = payload.files[0].edits.map(
+        (e: { diagnostic: { rule: string } }) => e.diagnostic.rule,
+      );
+      expect(rules).toContain("markdownlint/MD009");
+      expect(rules).toContain("relative-links");
+
+      const only = await runCliIn(dir, "md", "fix", "docs", "--rule", "relative-links", "-fj");
+      expect(JSON.parse(only.stderr).rules).toEqual(["relative-links"]);
+      expect(JSON.parse(only.stderr).edits).toBe(1);
+    });
+  });
+
+  it("normalizes a link without changing what it resolves to, and is idempotent", async () => {
+    await inWorkspace(async (dir) => {
+      fs.mkdirSync(path.join(dir, "docs"));
+      fs.writeFileSync(path.join(dir, "docs", "b.md"), "# B\n");
+      // `./` is preserved on the first link and absent on the second, proving
+      // the fixer normalizes the path without imposing a style.
+      fs.writeFileSync(
+        path.join(dir, "docs", "a.md"),
+        "# A\n\n[x](./sub/../b.md)\n[y](../docs/b.md)\n",
+      );
+
+      const write = await runCliIn(dir, "md", "fix", "docs", "--rule", "relative-links", "--write");
+      expect(write.exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(dir, "docs", "a.md"), "utf-8")).toBe(
+        "# A\n\n[x](./b.md)\n[y](b.md)\n",
+      );
+
+      const again = await runCliIn(dir, "md", "fix", "docs", "--rule", "relative-links", "-fj");
+      expect(again.exitCode).toBe(0);
+      expect(JSON.parse(again.stdout).edits).toBe(0);
     });
   });
 

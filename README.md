@@ -884,9 +884,17 @@ multi-file rollback rewrites bytes best-effort and is not crash-safe.
 Offsets are UTF-16 code-unit indices, not bytes, which is why `expected` is mandatory rather
 than advisory — a mismatch aborts instead of corrupting a document containing emoji.
 
-Available rules: `toc` (synchronize the content between existing `claude-cli:toc` markers).
-Inserting markers is an authoring decision, not a fix, and no fixer ever guesses at a broken
-link's destination.
+Available rules:
+
+- `toc` — synchronize the content between existing `claude-cli:toc` markers. Inserting markers
+  is an authoring decision, not a fix.
+- `relative-links` — normalize a local link's path. A `./` prefix and percent-encoding are
+  preserved rather than normalized, so a first run causes no churn. The rewritten target always
+  resolves to the same absolute path, so a broken link stays broken and no fixer ever guesses
+  at a destination.
+- `markdownlint` — apply markdownlint's own fix for an allowlist of unambiguous whitespace
+  rules (`MD009`, `MD010`, `MD012`, `MD018`–`MD021`, `MD023`, `MD027`, `MD030`, `MD037`–`MD039`,
+  `MD047`). Style-preference and prose-rewriting rules are excluded.
 
 Options: `--rule <name>` (repeatable), `--check`, `--dry-run`, `--write`, `--include`,
 `--exclude`, `--changed-since <revision>`.

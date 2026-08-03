@@ -42,14 +42,56 @@ Setting one is a configuration error.
 
 ## Fixers
 
-| Rule  | What it does                                                           |
-| ----- | ---------------------------------------------------------------------- |
-| `toc` | Replaces the content between an existing `claude-cli:toc` marker pair. |
+| Rule             | What it does                                                               |
+| ---------------- | -------------------------------------------------------------------------- |
+| `markdownlint`   | Applies markdownlint's own fix for a fixed allowlist of unambiguous rules. |
+| `relative-links` | Normalizes a local link's path without changing what it points at.         |
+| `toc`            | Replaces the content between an existing `claude-cli:toc` marker pair.     |
 
-`md fix --rule toc` only touches documents that already carry a marker pair, or the documents
-matched by `toc.files` when that is configured. **Inserting markers is an authoring decision,
-not a fix**, so a document without them is left alone. A malformed marker pair is reported
-under `unfixable` rather than thrown, so one bad document cannot kill a whole-tree run.
+### `toc`
+
+Only touches documents that already carry a marker pair, or the documents matched by
+`toc.files` when that is configured. **Inserting markers is an authoring decision, not a fix**,
+so a document without them is left alone. A malformed marker pair is reported under
+`unfixable` rather than thrown, so one bad document cannot kill a whole-tree run.
+
+### `relative-links`
+
+Deliberately narrow, so it is idempotent and causes no churn on a first run:
+
+- The path is recomputed in the original's own addressing mode, normalizing `a/../b.md`,
+  `.//b.md`, and `docs/./api.md`.
+- A `./` prefix is **preserved, never added and never removed.** Which spelling is canonical is
+  a style opinion, and flipping it would rewrite every link in a repository.
+- Percent-encoding is **preserved, never introduced.** Encoding a link that already renders is
+  churn, and `encodeURI` double-encodes a literal `%`.
+- Backslash separators become `/`, which is a genuine correctness fix.
+- Query strings, fragments, and escaped parentheses are preserved.
+
+Two properties hold over every rewrite, and are asserted in the test suite: the new target
+resolves to the **same absolute path** as the old one, and a second pass produces no further
+edits. A broken link therefore stays broken, just canonically spelled — this fixer never
+changes which file a link points at.
+
+External, anchor-only, and scheme-bearing targets such as `mailto:` are skipped, as is any
+link whose source text does not delimit a plain target.
+
+### `markdownlint`
+
+Runs only these rules, all whitespace- or punctuation-local and rewriting at most one span per
+line:
+
+`MD009` `MD010` `MD012` `MD018` `MD019` `MD020` `MD021` `MD023` `MD027` `MD030` `MD037`
+`MD038` `MD039` `MD047`
+
+Excluded despite offering a fix: `MD004`, `MD029`, `MD035`, `MD048`, `MD049`, `MD050`
+(config-dependent style _choices_ that rewrite prose markers); `MD044` (substring replacement
+inside prose); `MD005`, `MD007` (list indentation, where fixes interact across lines); and
+`MD034` (turning a bare URL into an autolink changes how it renders).
+
+Each allowlisted rule's derived range is cross-checked in the test suite against markdownlint's
+own `applyFix`. A rule that ever disagrees comes off the allowlist rather than getting a
+special case.
 
 ## The transaction
 

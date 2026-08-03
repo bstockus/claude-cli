@@ -1,4 +1,6 @@
 import type { FileSnapshot, PlannedEdit } from "../edit-plan.js";
+import { markdownlintFixer } from "./markdownlint-fixer.js";
+import { relativeLinksFixer } from "./relative-links-fixer.js";
 import { tocFixer } from "./toc-fixer.js";
 
 /** A finding a fixer recognized but deliberately did not act on. */
@@ -32,7 +34,7 @@ export interface Fixer {
   plan(files: readonly string[], context: FixerContext): Promise<FixerResult>;
 }
 
-export const FIXERS: readonly Fixer[] = [tocFixer];
+export const FIXERS: readonly Fixer[] = [markdownlintFixer, relativeLinksFixer, tocFixer];
 
 /**
  * Resolves `--rule` names, defaulting to every offline fixer.
