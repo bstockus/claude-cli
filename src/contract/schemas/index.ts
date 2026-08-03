@@ -1,0 +1,48 @@
+import type { SchemaEntry } from "../types.js";
+import { agentResultSchema } from "./agent.js";
+import {
+  diagnosticRecordSchema,
+  issueListSchema,
+  issueSchema,
+  lintDirSummarySchema,
+  mdAuditSchema,
+  mdCheckUrlsSchema,
+  mdGraphSchema,
+  mdIndexSchema,
+  mdOrphansSchema,
+  mdQuerySchema,
+} from "./markdown.js";
+import { checkUpdateSchema, describeSchema, envelopeSchema, schemaListSchema } from "./meta.js";
+
+/**
+ * Every published schema.
+ *
+ * These are TypeScript modules rather than a data directory on purpose:
+ * tsconfig sets `rootDir: "src"` with no `resolveJsonModule`, so `.json` files
+ * would never reach `dist` and the package would ship without them.
+ */
+export const SCHEMAS: readonly SchemaEntry[] = [
+  issueSchema,
+  issueListSchema,
+  diagnosticRecordSchema,
+  lintDirSummarySchema,
+  mdGraphSchema,
+  mdAuditSchema,
+  mdQuerySchema,
+  mdCheckUrlsSchema,
+  mdOrphansSchema,
+  mdIndexSchema,
+  agentResultSchema,
+  checkUpdateSchema,
+  describeSchema,
+  schemaListSchema,
+  envelopeSchema,
+];
+
+export const SCHEMA_BY_ID: ReadonlyMap<string, SchemaEntry> = new Map(
+  SCHEMAS.map((entry) => [entry.id, entry]),
+);
+
+export function schemaUriFor(id: string | null | undefined): string | null {
+  return (id && SCHEMA_BY_ID.get(id)?.uri) ?? null;
+}

@@ -1,0 +1,49 @@
+import type { OutputFormat } from "../types.js";
+
+export type JsonSchema = Record<string, unknown>;
+
+export interface SchemaEntry {
+  /** CLI-facing id, e.g. "agent-result". */
+  id: string;
+  /** Canonical `$id` embedded in the document. */
+  uri: string;
+  title: string;
+  /** Command ids that emit this shape. */
+  commands: string[];
+  schema: JsonSchema;
+}
+
+export type ContractStream = "stdout" | "stderr";
+
+export interface ExitCodeMeaning {
+  code: 0 | 1 | 2;
+  meaning: string;
+}
+
+export interface CommandContract {
+  /** Space-joined command path, e.g. "md graph". */
+  id: string;
+  formats: readonly OutputFormat[];
+  /** Built-in default, before any project configuration is applied. */
+  defaultFormat: OutputFormat;
+  /** True when `.claude-cli.yml` may override the format for this command. */
+  formatConfigurable: boolean;
+  /** Schema id for `--format json`, or `null` when none is published yet. */
+  outputSchema: string | null;
+  /** Schema id for `--format jsonl`. */
+  jsonlSchema?: string | null;
+  /** External schema URI for `--format sarif`. */
+  sarifSchema?: string | null;
+  exitCodes: ExitCodeMeaning[];
+  /** Which stream carries the primary payload, per outcome. */
+  stream: { success: ContractStream; findings?: ContractStream };
+  /** True when the command may modify files on disk. */
+  writes: boolean;
+  stability: "stable" | "experimental";
+  /**
+   * Behavior a consumer would otherwise be surprised by. Recorded truthfully,
+   * including current inconsistencies — changing them is a breaking change
+   * under the rules in docs/contract.md.
+   */
+  notes?: string;
+}
