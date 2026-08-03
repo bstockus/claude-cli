@@ -45,6 +45,7 @@ import {
 import { agentSpecsAction } from "./commands/agent-specs.js";
 import type { AgentAddOptions } from "./commands/agent-scaffold.js";
 import { agentAddAction, agentInitAction } from "./commands/agent-scaffold.js";
+import { agentUpgradeAction } from "./commands/agent-upgrade.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -249,6 +250,23 @@ agent
   )
   .action((kind: string, name: string, bundle: string | undefined, opts: AgentAddOptions) =>
     agentActionBoundary("add", opts, () => agentAddAction(kind, name, bundle, opts)),
+  );
+
+agent
+  .command("upgrade")
+  .description("Migrate a bundle between neutral schema versions")
+  .argument("<source>", "Bundle root")
+  .requiredOption("--to-schema <version>", "Target bundle schema version")
+  .option("--dry-run", "Report the migration without writing")
+  .option("--check", "Exit 2 when the bundle is not already at the target schema")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nOnly agent-bundle.yaml is rewritten; no component file is touched. The\nmigration is verified in memory to produce byte-identical generated output\nbefore it writes.\n\nExit codes:\n  0  Migrated, already current, or dry run completed\n  1  Invocation or I/O error\n  2  --check found a bundle below the target schema, or a blocking finding",
+  )
+  .action((source: string, opts: Parameters<typeof agentUpgradeAction>[1]) =>
+    agentActionBoundary("upgrade", opts, () => agentUpgradeAction(source, opts)),
   );
 
 agent

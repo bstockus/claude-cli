@@ -1,4 +1,5 @@
 import type { BundleMarketplace } from "./manifest.js";
+import type { UpgradeReport } from "./upgrade.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -151,7 +152,8 @@ export interface AgentPlan {
 }
 
 export interface AgentResult {
-  command: "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs" | "init" | "add";
+  command:
+    "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs" | "init" | "add" | "upgrade";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -166,6 +168,8 @@ export interface AgentResult {
   doctor?: DoctorReport;
   /** What a writing command did or would do, emitted by `agent init` and `agent add`. */
   plan?: AgentPlan;
+  /** Migration result, emitted by `agent upgrade`. */
+  upgrade?: UpgradeReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

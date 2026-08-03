@@ -260,6 +260,7 @@ Cursor artifacts. Agent-bundle defaults deliberately live in `agent-bundle.yaml`
 claude-cli agent init release-helper --output ./my-bundle
 claude-cli agent add skill prepare-release ./my-bundle
 claude-cli agent add hook pre-tool-use ./my-bundle
+claude-cli agent upgrade ./my-bundle --to-schema 2 --check
 claude-cli agent validate ./my-bundle --target all
 claude-cli agent inspect ./my-bundle --format json
 claude-cli agent compat

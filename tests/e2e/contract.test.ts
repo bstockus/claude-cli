@@ -322,6 +322,13 @@ describe("declared output schemas match real output", () => {
       outcome: "success",
       exitCode: 0,
     },
+    {
+      label: "agent upgrade --dry-run",
+      schema: "agent-result",
+      args: (c) => ["agent", "upgrade", c.bundle, "--to-schema", "2", "--dry-run", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
   ];
 
   it.each(cases)("$label", async (testCase) => {

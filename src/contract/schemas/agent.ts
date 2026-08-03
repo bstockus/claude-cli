@@ -18,6 +18,7 @@ export const agentResultSchema: SchemaEntry = {
     "agent specs",
     "agent init",
     "agent add",
+    "agent upgrade",
   ],
   schema: {
     $schema: DRAFT,
@@ -29,7 +30,17 @@ export const agentResultSchema: SchemaEntry = {
     required: ["command", "ok", "targets", "artifacts", "diagnostics"],
     properties: {
       command: {
-        enum: ["convert", "validate", "inspect", "compat", "doctor", "specs", "init", "add"],
+        enum: [
+          "convert",
+          "validate",
+          "inspect",
+          "compat",
+          "doctor",
+          "specs",
+          "init",
+          "add",
+          "upgrade",
+        ],
       },
       ok: { type: "boolean" },
       source: { type: "string", description: "Resolved bundle root, when one was given." },
@@ -61,6 +72,35 @@ export const agentResultSchema: SchemaEntry = {
       },
       specs: { description: "The target conformance profiles, emitted by `agent specs`." },
       doctor: { $ref: "#/$defs/doctor" },
+      upgrade: {
+        description: "Migration result, emitted by `agent upgrade`.",
+        type: "object",
+        required: ["from", "to", "changes", "notes"],
+        properties: {
+          from: {
+            type: "string",
+            description: "Source schema version, as the manifest spells it.",
+          },
+          to: { type: "string" },
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["field"],
+              properties: {
+                field: { type: "string" },
+                from: { description: "Absent when the field is being added." },
+                to: { description: "Absent when the field is being removed." },
+              },
+            },
+          },
+          notes: {
+            description: "Items needing human judgment, mirrored as AB221 notices.",
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      },
       plan: {
         description:
           "What a writing command did or would do, emitted by `agent init` and `agent add`.",

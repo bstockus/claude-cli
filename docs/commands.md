@@ -22,6 +22,7 @@ signatures are required arguments; square brackets are optional arguments.
 | [`agent init <name>`](commands/agent-init.md)           | Scaffold a new portable agent bundle.                                           |
 | [`agent add <kind> <name>`](commands/agent-add.md)      | Add one component to an existing bundle.                                        |
 | [`agent convert <source>`](commands/agent-convert.md)   | Convert a portable bundle or legacy Claude plugin into target-native artifacts. |
+| [`agent upgrade <source>`](commands/agent-upgrade.md)   | Migrate a bundle between neutral schema versions.                               |
 | [`agent validate <source>`](commands/agent-validate.md) | Validate a bundle without generating artifacts.                                 |
 | [`agent inspect <source>`](commands/agent-inspect.md)   | Show the normalized bundle, references, overrides, and component graph.         |
 | [`agent compat [source]`](commands/agent-compat.md)     | Show the compatibility matrix or analyze one bundle against selected targets.   |

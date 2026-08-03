@@ -158,6 +158,17 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "agent-bundle.yaml is edited through a comment-preserving YAML document and is left byte-untouched when no manifest change is needed.",
   }),
+  agentCommand("upgrade", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Migrated, already current, or dry run completed"),
+      USAGE,
+      FINDINGS("--check found a bundle below the target schema, or a blocking finding"),
+    ],
+    notes:
+      "Rewrites only agent-bundle.yaml. --to-schema is required rather than defaulting to the newest, so a CI result does not depend on the installed CLI version. Human-judgment notices (AB221) do not fail the command.",
+  }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],
     stream: { success: "stdout" },
