@@ -178,6 +178,10 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "exclude",
   ]),
   diff: new Set(["format", "paths", "since", "summary", "include", "exclude"]),
+  // `check`, `write`, and `dryRun` are deliberately absent: the mutation mode
+  // is CLI-only, so a checked-in config file can never turn `md fix` into a
+  // writer, and mode resolution needs no config-versus-CLI disambiguation.
+  fix: new Set(["format", "paths", "rule", "include", "exclude", "changedSince"]),
   index: new Set(["format", "paths", "include", "exclude"]),
 };
 
@@ -345,9 +349,16 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
     throw new Error(`${name} must be a string`);
   }
   if (
-    ["include", "exclude", "ignore", "ignoreDomain", "entry", "assetExtension", "section"].includes(
-      key,
-    )
+    [
+      "include",
+      "exclude",
+      "ignore",
+      "ignoreDomain",
+      "entry",
+      "assetExtension",
+      "section",
+      "rule",
+    ].includes(key)
   )
     strings(value, name, []);
   if (["allowedStatus", "headFallbackStatus"].includes(key)) {

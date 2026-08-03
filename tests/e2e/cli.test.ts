@@ -1611,3 +1611,158 @@ describe("md diff", () => {
     }
   });
 });
+
+describe("md fix", () => {
+  const STALE =
+    "# Doc\n\nbefore\n<!-- claude-cli:toc:start -->\nold\n<!-- claude-cli:toc:end -->\n\n## Section\n";
+  const FIXED =
+    "# Doc\n\nbefore\n<!-- claude-cli:toc:start -->\n- [Doc](#doc)\n  - [Section](#section)\n<!-- claude-cli:toc:end -->\n\n## Section\n";
+
+  async function inWorkspace(body: (dir: string) => Promise<void>): Promise<void> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-fix-e2e-"));
+    try {
+      fs.writeFileSync(path.join(dir, "doc.md"), STALE);
+      await body(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("defaults to --check, exits 2, and modifies nothing", async () => {
+    await inWorkspace(async (dir) => {
+      const before = fs.statSync(path.join(dir, "doc.md"));
+      const result = await runCliIn(dir, "md", "fix", "doc.md", "-fj");
+      expect(result.exitCode).toBe(2);
+      const payload = JSON.parse(result.stderr);
+      expect(payload.mode).toBe("check");
+      expect(payload.edits).toBe(1);
+      // Guards against a plan that "fails" for the wrong reason.
+      expect(payload.conflicts).toEqual([]);
+      expect(payload.rules).toEqual(["toc"]);
+      const after = fs.statSync(path.join(dir, "doc.md"));
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("exits 0 and reports nothing when the workspace is already clean", async () => {
+    await inWorkspace(async (dir) => {
+      fs.writeFileSync(path.join(dir, "doc.md"), FIXED);
+      const result = await runCliIn(dir, "md", "fix", "doc.md");
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("No pending fixes");
+    });
+  });
+
+  it("prints byte ranges and both texts in --dry-run without writing", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(dir, "md", "fix", "doc.md", "--dry-run");
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("toc");
+      expect(result.stdout).toMatch(/\[\d+,\d+\)/);
+      expect(result.stdout).toContain("dry run — no files modified");
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("applies with --write and is idempotent", async () => {
+    await inWorkspace(async (dir) => {
+      const first = await runCliIn(dir, "md", "fix", "doc.md", "--write", "-fj");
+      expect(first.exitCode).toBe(0);
+      expect(JSON.parse(first.stdout).applied).toBe(1);
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(FIXED);
+
+      const second = await runCliIn(dir, "md", "fix", "doc.md", "--write", "-fj");
+      expect(second.exitCode).toBe(0);
+      expect(JSON.parse(second.stdout).edits).toBe(0);
+      expect((await runCliIn(dir, "md", "fix", "doc.md")).exitCode).toBe(0);
+      // No staging file survives a successful commit.
+      expect(fs.readdirSync(dir).filter((n) => n.includes("claude-cli-"))).toEqual([]);
+    });
+  });
+
+  it("reports malformed markers as unfixable without failing the run", async () => {
+    await inWorkspace(async (dir) => {
+      fs.writeFileSync(
+        path.join(dir, "bad.md"),
+        "# Bad\n<!-- claude-cli:toc:start -->\n<!-- claude-cli:toc:start -->\n<!-- claude-cli:toc:end -->\n",
+      );
+      const result = await runCliIn(dir, "md", "fix", ".", "-fj");
+      // doc.md still has a pending fix, so the exit is 2 for that, not for bad.md.
+      expect(result.exitCode).toBe(2);
+      const payload = JSON.parse(result.stderr);
+      expect(payload.unfixable).toHaveLength(1);
+      expect(payload.unfixable[0]).toMatchObject({ rule: "toc", reason: "malformed markers" });
+    });
+  });
+
+  it("leaves a document without markers alone", async () => {
+    await inWorkspace(async (dir) => {
+      fs.writeFileSync(path.join(dir, "plain.md"), "# Plain\n\n## Section\n");
+      const result = await runCliIn(dir, "md", "fix", "plain.md", "-fj");
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).edits).toBe(0);
+    });
+  });
+
+  it("rejects conflicting modes, an unknown rule, and stdin", async () => {
+    await inWorkspace(async (dir) => {
+      const modes = await runCliIn(dir, "md", "fix", "doc.md", "--check", "--write");
+      expect(modes.exitCode).toBe(1);
+      expect(modes.stderr).toMatch(/cannot be used together/);
+
+      const rule = await runCliIn(dir, "md", "fix", "doc.md", "--rule", "nope");
+      expect(rule.exitCode).toBe(1);
+      expect(rule.stderr).toMatch(/Unknown rule: nope/);
+
+      const stdin = await runCliIn(dir, "md", "fix", "-");
+      expect(stdin.exitCode).toBe(1);
+      expect(stdin.stderr).toMatch(/does not accept stdin/);
+    });
+  });
+
+  it("refuses a config file that tries to make it write", async () => {
+    await inWorkspace(async (dir) => {
+      // The mutation mode is CLI-only by design; a checked-in config must never
+      // be able to turn a check into a write.
+      fs.writeFileSync(
+        path.join(dir, ".claude-cli.yml"),
+        "version: 1\ncommands:\n  fix:\n    write: true\n",
+      );
+      const result = await runCliIn(dir, "md", "fix", "doc.md");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/Unknown commands\.fix key: write/);
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(STALE);
+    });
+  });
+
+  it("narrows to files changed since a revision", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-fix-git-"));
+    try {
+      const env = {
+        GIT_AUTHOR_NAME: "T",
+        GIT_AUTHOR_EMAIL: "t@example.com",
+        GIT_COMMITTER_NAME: "T",
+        GIT_COMMITTER_EMAIL: "t@example.com",
+      };
+      const git = (...args: string[]) =>
+        execFileSync("git", ["-C", dir, ...args], {
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, ...env },
+        });
+      fs.writeFileSync(path.join(dir, "tracked.md"), STALE);
+      git("init", "-q", "-b", "main");
+      git("add", "-A");
+      git("commit", "-q", "-m", "first");
+      fs.writeFileSync(path.join(dir, "new.md"), STALE);
+
+      const result = await runCliIn(dir, "md", "fix", ".", "--changed-since", "HEAD", "-fj");
+      expect(result.exitCode).toBe(2);
+      const payload = JSON.parse(result.stderr);
+      expect(payload.filesScanned).toBe(1);
+      expect(payload.files[0].file).toContain("new.md");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

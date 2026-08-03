@@ -14,11 +14,30 @@ export function renderToc(headings: MdHeading[], ordered = false): string {
     .join("\n");
 }
 
+/**
+ * Offsets of the bytes strictly between the markers.
+ *
+ * Reported so a caller can express the update as a scoped edit rather than a
+ * whole-file replacement; `synchronizeToc` computes it either way.
+ */
+export interface TocRange {
+  start: number;
+  end: number;
+}
+
 export type TocSynchronization =
   | { status: "missing" }
   | { status: "malformed"; message: string }
-  | { status: "current"; content: string; block: string }
-  | { status: "stale"; content: string; replacement: string; block: string };
+  | { status: "current"; content: string; block: string; range: TocRange }
+  | {
+      status: "stale";
+      content: string;
+      replacement: string;
+      block: string;
+      range: TocRange;
+      /** The rendered interior that belongs between the markers. */
+      interior: string;
+    };
 
 export function synchronizeToc(content: string, toc: string): TocSynchronization {
   const starts = [...content.matchAll(new RegExp(TOC_START, "g"))];
@@ -34,11 +53,15 @@ export function synchronizeToc(content: string, toc: string): TocSynchronization
   const normalizedToc = toc.replace(/\r?\n/g, eol);
   const interior = `${eol}${normalizedToc}${normalizedToc ? eol : ""}`;
   const block = `${TOC_START}${interior}${TOC_END}`;
-  if (content.slice(startEnd, endStart) === interior) return { status: "current", content, block };
+  const range = { start: startEnd, end: endStart };
+  if (content.slice(startEnd, endStart) === interior)
+    return { status: "current", content, block, range };
   return {
     status: "stale",
     content,
     replacement: content.slice(0, startEnd) + interior + content.slice(endStart),
     block,
+    range,
+    interior,
   };
 }

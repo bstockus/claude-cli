@@ -27,6 +27,7 @@ import { auditAction } from "./commands/audit.js";
 import { queryAction } from "./commands/query.js";
 import { contextAction } from "./commands/context.js";
 import { diffAction } from "./commands/diff.js";
+import { fixAction } from "./commands/fix.js";
 import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
@@ -1032,6 +1033,48 @@ common(md.command("index"))
       commandOptions(
         "index",
         { include: projectConfig.files.include, exclude: projectConfig.files.exclude },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("fix"))
+  .description("Plan and apply deterministic Markdown fixes")
+  .argument("<inputs...>", "Markdown files, directories, or globs")
+  .option("--rule <name>", "Fixer to run (repeatable); default: every fixer", collect)
+  .option("--check", "Report pending fixes without writing (default)")
+  .option("--dry-run", "Print the full plan without writing")
+  .option("--write", "Apply the plan as one transaction")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
+  .option("--changed-since <revision>", "Only files changed since a Git revision")
+  .addHelpText(
+    "after",
+    "\nThe mode defaults to --check, and --check, --dry-run, and --write are mutually\n" +
+      "exclusive. The mode cannot be set from project configuration, so a checked-in\n" +
+      "config file can never turn md fix into a writer.\n\n" +
+      "--write applies every file's edits as one transaction, and refuses to write at\n" +
+      "all if any input changed after planning, any two edits overlap, or any target\n" +
+      "resolves outside the workspace root.\n\n" +
+      "Exit codes:\n" +
+      "  0  No pending fixes, or --write/--dry-run completed\n" +
+      "  2  --check found pending fixes, or any mode found a conflict",
+  )
+  .action((inputs: string[], opts: Record<string, unknown>) =>
+    fixAction(
+      inputs,
+      commandOptions(
+        "fix",
+        {
+          rule: [] as string[],
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+          // Config may supply these as numbers; the fixer parses strings, so
+          // coerce here exactly as `md audit` does.
+          maxDepth: String(projectConfig.commands.toc?.maxDepth ?? "6"),
+          minDepth: String(projectConfig.commands.toc?.minDepth ?? "1"),
+          ordered: Boolean(projectConfig.commands.toc?.ordered ?? false),
+        },
         opts,
       ) as never,
     ),

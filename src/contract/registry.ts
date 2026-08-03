@@ -300,6 +300,18 @@ const CONTRACTS: CommandContract[] = [
   }),
 
   // Markdown: refactoring
+  diagnostic("fix", "Pending fixes, or a conflict that blocks writing", {
+    outputSchema: "md-fix",
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("No pending fixes, or --write and --dry-run completed"),
+      USAGE,
+      FINDINGS("--check found pending fixes, or any mode found a conflict"),
+    ],
+    notes:
+      "Defaults to --check; only --write modifies files, and the mode cannot be set from project configuration. --write applies every file's edits as one transaction and refuses to write at all if any input changed after planning, any two edits overlap, or any target resolves outside the workspace root. Per-file commits are atomic; a multi-file rollback rewrites bytes best-effort and is not crash-safe. Unfixable findings are reported but never change the exit code.",
+  }),
   inspection("rename-heading", {
     writes: true,
     exitCodes: [

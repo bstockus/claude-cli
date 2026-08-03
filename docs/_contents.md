@@ -68,5 +68,6 @@ This directory is the reference documentation for `claude-cli`.
 
 ## Markdown modification commands
 
+- [`md fix`](commands/md-fix.md)
 - [`md rename-heading`](commands/md-rename-heading.md)
 - [`md rename-file`](commands/md-rename-file.md)

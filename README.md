@@ -860,6 +860,37 @@ Options:
 
 ### Modification
 
+#### `md fix <inputs...>`
+
+Turn deterministic findings into reviewable edits.
+
+```bash
+claude-cli md fix docs --check
+claude-cli md fix docs --dry-run --rule toc
+claude-cli md fix docs --write
+```
+
+Each fixer produces a plan — byte ranges, the exact text expected at each range, the
+replacement, and the originating diagnostic — and `--write` applies the whole plan as one
+transaction. The mode defaults to `--check`, which is the form that belongs in CI; `--write`
+is the only mode that mutates, and it **cannot be enabled from project configuration**, so a
+checked-in `.claude-cli.yml` can never turn a check into a write.
+
+`--write` refuses entirely if any two edits overlap, any input changed after planning, or any
+target resolves outside the containment root, including through a symlink. Conflicts name both
+colliding rules so it is clear which `--rule` to drop. Per-file commits are atomic; the
+multi-file rollback rewrites bytes best-effort and is not crash-safe.
+
+Offsets are UTF-16 code-unit indices, not bytes, which is why `expected` is mandatory rather
+than advisory — a mismatch aborts instead of corrupting a document containing emoji.
+
+Available rules: `toc` (synchronize the content between existing `claude-cli:toc` markers).
+Inserting markers is an authoring decision, not a fix, and no fixer ever guesses at a broken
+link's destination.
+
+Options: `--rule <name>` (repeatable), `--check`, `--dry-run`, `--write`, `--include`,
+`--exclude`, `--changed-since <revision>`.
+
 #### `md rename-file <source> <destination>`
 
 Move a Markdown file or referenced asset within the workspace and update selected inline and

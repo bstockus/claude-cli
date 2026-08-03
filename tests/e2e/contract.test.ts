@@ -41,6 +41,20 @@ function workspace(): string {
   return root;
 }
 
+/**
+ * A workspace of its own, so the stale marker block cannot perturb the counts
+ * every other case reads out of the shared one.
+ */
+function staleToc(): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "contract-toc-"));
+  temporary.push(root);
+  fs.writeFileSync(
+    path.join(root, "stale.md"),
+    "# Doc\n\n<!-- claude-cli:toc:start -->\nold\n<!-- claude-cli:toc:end -->\n\n## Section\n",
+  );
+  return root;
+}
+
 function bundle(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "contract-bundle-"));
   temporary.push(root);
@@ -165,7 +179,7 @@ describe("declared output schemas match real output", () => {
   interface Case {
     label: string;
     schema: string;
-    args: (context: { workspace: string; bundle: string }) => string[];
+    args: (context: { workspace: string; bundle: string; staleToc: string }) => string[];
     outcome: "success" | "findings";
     exitCode: number;
   }
@@ -261,6 +275,22 @@ describe("declared output schemas match real output", () => {
         path.join(c.workspace, "loner.md"),
         "-fj",
       ],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md fix --check (findings)",
+      schema: "md-fix",
+      args: (c) => ["md", "fix", c.staleToc, "-fj"],
+      outcome: "findings",
+      exitCode: 2,
+    },
+    {
+      // A non-empty plan is a success in dry-run: it is an explicit request to
+      // see the plan, and only a conflict means --write could not follow.
+      label: "md fix --dry-run",
+      schema: "md-fix",
+      args: (c) => ["md", "fix", c.staleToc, "--dry-run", "-fj"],
       outcome: "success",
       exitCode: 0,
     },
@@ -413,7 +443,7 @@ describe("declared output schemas match real output", () => {
   ];
 
   it.each(cases)("$label", async (testCase) => {
-    const context = { workspace: workspace(), bundle: bundle() };
+    const context = { workspace: workspace(), bundle: bundle(), staleToc: staleToc() };
     const args = testCase.args(context);
     const result = await run(...args);
 

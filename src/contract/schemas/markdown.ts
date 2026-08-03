@@ -754,3 +754,99 @@ export const mdDiffSchema: SchemaEntry = {
     },
   },
 };
+
+export const mdFixSchema: SchemaEntry = {
+  id: "md-fix",
+  uri: schemaUri("v1", "md-fix"),
+  title: "Markdown fix plan",
+  commands: ["md fix"],
+  schema: {
+    $schema: DRAFT,
+    $id: schemaUri("v1", "md-fix"),
+    title: "Markdown fix plan",
+    description:
+      "Offsets are UTF-16 code-unit indices into the utf-8-decoded file, not byte offsets. `expected` is the authoritative anchor: a consumer applying an edit itself should verify it first rather than trust the unit. A non-empty `conflicts` means nothing will be written in any mode.",
+    type: "object",
+    required: [
+      "mode",
+      "rules",
+      "filesScanned",
+      "filesWithEdits",
+      "edits",
+      "applied",
+      "files",
+      "conflicts",
+      "unfixable",
+    ],
+    properties: {
+      mode: { enum: ["check", "dry-run", "write"] },
+      rules: { description: "The fixers that ran.", ...stringArray },
+      filesScanned: { type: "integer", minimum: 0 },
+      filesWithEdits: { type: "integer", minimum: 0 },
+      edits: { type: "integer", minimum: 0 },
+      applied: {
+        type: "integer",
+        minimum: 0,
+        description: "Files whose bytes changed. Always 0 outside --write.",
+      },
+      files: { type: "array", items: { $ref: "#/$defs/filePlan" } },
+      conflicts: { type: "array", items: { $ref: "#/$defs/conflict" } },
+      unfixable: { type: "array", items: { $ref: "#/$defs/unfixable" } },
+    },
+    $defs: {
+      diagnostic: {
+        type: "object",
+        required: ["rule", "line", "message"],
+        properties: {
+          rule: { type: "string", description: "Fixer identity, e.g. 'toc'." },
+          line: { type: "integer", minimum: 0 },
+          message: { type: "string" },
+        },
+      },
+      edit: {
+        type: "object",
+        required: ["start", "end", "line", "expected", "replacement", "diagnostic"],
+        properties: {
+          start: { type: "integer", minimum: 0 },
+          end: { type: "integer", minimum: 0, description: "Exclusive." },
+          line: { type: "integer", minimum: 0 },
+          expected: { type: "string", description: "Text currently at [start, end)." },
+          replacement: { type: "string" },
+          diagnostic: { $ref: "#/$defs/diagnostic" },
+        },
+      },
+      filePlan: {
+        type: "object",
+        required: ["file", "edits"],
+        properties: {
+          file: { type: "string" },
+          edits: { type: "array", items: { $ref: "#/$defs/edit" } },
+          applied: { type: "boolean", description: "Present only in --write mode." },
+        },
+      },
+      conflict: {
+        type: "object",
+        required: ["kind", "file", "message", "rules"],
+        properties: {
+          kind: {
+            enum: ["overlap", "outside-workspace", "stale-input", "expectation-mismatch"],
+          },
+          file: { type: "string" },
+          message: { type: "string" },
+          rules: { description: "Two entries for an overlap, one otherwise.", ...stringArray },
+        },
+      },
+      unfixable: {
+        type: "object",
+        required: ["file", "line", "rule", "message", "reason"],
+        properties: {
+          file: { type: "string" },
+          line: { type: "integer", minimum: 0 },
+          rule: { type: "string" },
+          message: { type: "string" },
+          reason: { type: "string", description: "Why no edit was produced." },
+        },
+      },
+    },
+  },
+};
