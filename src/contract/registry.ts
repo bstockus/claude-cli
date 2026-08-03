@@ -282,7 +282,11 @@ const CONTRACTS: CommandContract[] = [
   }),
 
   // Markdown: workspace data
-  inspection("query", { outputSchema: "md-query" }),
+  inspection("query", {
+    outputSchema: "md-query",
+    notes:
+      "Two modes share one kind argument. Without --where, --select, or --group-by the six original kinds emit their historical shapes unchanged. With any of them the kind names an entity (documents, headings, links, tasks, code-blocks, frontmatter) and the payload carries projected rows plus a `fields` column order; --group-by replaces `results` with group objects. So code-blocks emits language groups without composable options and flat rows with them. links-to, duplicates, unused-assets, and missing-h1 reject composable options rather than changing shape, and the predicate options are deliberately not configurable.",
+  }),
   inspection("diff", {
     outputSchema: "md-diff",
     notes:

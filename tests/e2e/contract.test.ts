@@ -242,6 +242,27 @@ describe("declared output schemas match real output", () => {
       exitCode: 0,
     },
     {
+      label: "md query documents (composable)",
+      schema: "md-query",
+      args: (c) => ["md", "query", "documents", c.workspace, "--where", "has:h1", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md query links --select",
+      schema: "md-query",
+      args: (c) => ["md", "query", "links", c.workspace, "--select", "file,line,target", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
+      label: "md query tasks --group-by",
+      schema: "md-query",
+      args: (c) => ["md", "query", "tasks", c.workspace, "--group-by", "checked", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "md query duplicates",
       schema: "md-query",
       args: (c) => ["md", "query", "duplicates", c.workspace, "--field", "title", "-fj"],

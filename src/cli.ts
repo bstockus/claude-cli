@@ -993,9 +993,26 @@ common(md.command("query"))
   .option("--summary", "Show task totals without individual tasks")
   .option("--no-summary", "Include individual tasks")
   .option("--asset-extension <ext>", "Asset extension override (repeatable)", collect)
+  .option("--where <predicate>", "Filter predicate (repeatable, AND-ed)", collect)
+  .option("--select <fields>", "Comma-separated fields to emit (repeatable)", collect)
+  .option("--group-by <field>", "Group rows by one field")
   .option("--include <glob>", "Markdown include glob (repeatable)", collect)
   .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
-  .addHelpText("after", "\nQuery matches are informational and exit 0.")
+  .addHelpText(
+    "after",
+    "\nQuery matches are informational and exit 0.\n\n" +
+      "Two modes share the kind argument. Without --where, --select, or --group-by the\n" +
+      "six shortcut kinds emit their historical shapes unchanged. With any of them the\n" +
+      "kind names an entity: documents, headings, links, tasks, code-blocks, frontmatter.\n\n" +
+      "Predicates are <field><op><value> with one of = != ~ > >= < <=, or has:<field> /\n" +
+      "links-to:<path>, optionally negated with a leading '!'. Repeating --where ANDs\n" +
+      "them. `frontmatter.<key>` is a field on every entity.\n\n" +
+      "Examples:\n" +
+      "  md query documents --where has:h1 --select file,title\n" +
+      "  md query links --where links-to:docs/api.md --select file,line\n" +
+      "  md query tasks --where status=pending --group-by frontmatter.owner\n\n" +
+      "An unknown field, predicate, or operator exits 1 rather than matching nothing.",
+  )
   .action((kind: string, directory: string | undefined, opts: Record<string, unknown>) =>
     queryAction(
       kind,
@@ -1010,6 +1027,11 @@ common(md.command("query"))
           status: "all",
           summary: false,
           assetExtension: projectConfig.assets.extensions,
+          // Predicates are per-question by nature, so they are deliberately not
+          // configurable: a checked-in `commands.query.where` would silently
+          // filter every query anyone ran in the workspace.
+          where: [] as string[],
+          select: [] as string[],
         },
         opts,
       ) as never,

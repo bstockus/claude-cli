@@ -5,9 +5,17 @@ import { requireDirectory } from "../input.js";
 import { outputPath, runtime } from "../runtime.js";
 import { jsonPayload } from "../result.js";
 import { nestedValue } from "../object-path.js";
+import type { EntityKind } from "../query/entities.js";
+import { QueryUsageError, buildPlan, type QueryPlan } from "../query/plan.js";
+import { executePlan, type QueryResult } from "../query/execute.js";
+import { renderQueryText } from "../query/render.js";
+import { explicitOptionKeys } from "../runtime.js";
 
-type QueryKind =
+/** The six historical kinds, whose payloads are frozen. */
+type LegacyKind =
   "links-to" | "duplicates" | "unused-assets" | "code-blocks" | "tasks" | "missing-h1";
+
+type QueryKind = LegacyKind | EntityKind;
 
 interface QueryOptions {
   envelope?: boolean;
@@ -21,6 +29,9 @@ interface QueryOptions {
   status: string;
   summary: boolean;
   assetExtension: string[];
+  where: string[];
+  select: string[];
+  groupBy?: string;
 }
 
 interface QueryEnvelope {
@@ -29,6 +40,10 @@ interface QueryEnvelope {
   count: number;
   results: unknown[];
   summary?: Record<string, number>;
+  /** Composable mode only: the projection, in column order. */
+  fields?: string[];
+  /** Composable mode only, when grouping. */
+  groupBy?: string;
 }
 
 function primitive(value: unknown): string | undefined {
@@ -179,23 +194,101 @@ function textOutput(envelope: QueryEnvelope, human: boolean): string {
   return lines.join("\n");
 }
 
+const LEGACY_KINDS: LegacyKind[] = [
+  "links-to",
+  "duplicates",
+  "unused-assets",
+  "code-blocks",
+  "tasks",
+  "missing-h1",
+];
+
+/** Options that belong to a shortcut kind and have no composable meaning. */
+const LEGACY_OPTIONS = [
+  "target",
+  "field",
+  "lang",
+  "content",
+  "status",
+  "summary",
+  "assetExtension",
+];
+
+/**
+ * Runs a composable query.
+ *
+ * Reached only when `--where`, `--select`, or `--group-by` was typed, so every
+ * shortcut kind keeps its historical payload byte for byte.
+ */
+function composableQuery(
+  kindValue: string,
+  directory: string,
+  opts: QueryOptions,
+): { envelope: QueryEnvelope; plan: QueryPlan; result: QueryResult } {
+  // Detected from argv rather than by comparing against defaults, so a
+  // `.claude-cli.yml` setting `commands.query.status` does not look like a
+  // conflicting flag on every composable tasks query.
+  const typed = explicitOptionKeys(opts as unknown as Record<string, unknown>);
+  const conflicting = LEGACY_OPTIONS.filter((name) => typed.has(name));
+  if (conflicting.length) {
+    throw new QueryUsageError(
+      `--${conflicting[0]} belongs to a shortcut kind and cannot be combined with --where, --select, or --group-by`,
+    );
+  }
+  const dir = requireDirectory(directory, opts);
+  const files = runtime().workspace.markdownFiles(dir, {
+    include: opts.include,
+    exclude: opts.exclude,
+  });
+  const plan = buildPlan({
+    kind: kindValue,
+    where: opts.where,
+    select: opts.select,
+    ...(opts.groupBy === undefined ? {} : { groupBy: opts.groupBy }),
+  });
+  const result = executePlan(plan, {
+    workspace: runtime().workspace,
+    files,
+    displayPath: (file) => outputPath(file, opts),
+  });
+
+  return {
+    plan,
+    result,
+    envelope: {
+      kind: plan.entity,
+      directory: outputPath(dir, opts),
+      count: result.groups ? result.groups.length : result.rows.length,
+      results: result.groups ?? result.rows,
+      fields: result.fields,
+      ...(plan.groupBy ? { groupBy: plan.groupBy } : {}),
+      ...(result.groups
+        ? { summary: { matched: result.matched, groups: result.groups.length } }
+        : {}),
+    },
+  };
+}
+
 export async function queryAction(
   kindValue: string,
   directory: string,
   opts: QueryOptions,
 ): Promise<void> {
-  const kinds: QueryKind[] = [
-    "links-to",
-    "duplicates",
-    "unused-assets",
-    "code-blocks",
-    "tasks",
-    "missing-h1",
-  ];
-  if (!kinds.includes(kindValue as QueryKind)) {
+  const composable = opts.where.length > 0 || opts.select.length > 0 || Boolean(opts.groupBy);
+  if (composable) {
+    const { envelope, plan, result } = composableQuery(kindValue, directory, opts);
+    process.stdout.write(
+      opts.format === "json"
+        ? jsonPayload("md query", envelope, opts)
+        : renderQueryText(result, plan, envelope.directory, opts.format === "human") + "\n",
+    );
+    return;
+  }
+
+  if (!LEGACY_KINDS.includes(kindValue as LegacyKind)) {
     throw new Error(`Unknown query kind: ${kindValue}`);
   }
-  const kind = kindValue as QueryKind;
+  const kind = kindValue as LegacyKind;
   const dir = requireDirectory(directory, opts);
   const files = runtime().workspace.markdownFiles(dir, {
     include: opts.include,

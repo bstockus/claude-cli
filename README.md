@@ -642,6 +642,31 @@ Available kinds are `links-to`, `duplicates`, `unused-assets`, `code-blocks`, `t
 level-one heading. Asset scanning uses `assets.extensions` or repeatable
 `--asset-extension` overrides.
 
+Passing `--where`, `--select`, or `--group-by` switches to the **composable** mode, where the
+kind names an entity instead:
+
+```bash
+claude-cli md query documents --where has:h1 --select file,title
+claude-cli md query links --where links-to:docs/api.md --select file,line,linkText
+claude-cli md query tasks --where status=pending --group-by frontmatter.owner
+claude-cli md query headings --where 'depth>=2' --where text~api
+```
+
+Entities are `documents`, `headings`, `links`, `tasks`, `code-blocks`, and `frontmatter`, and
+`frontmatter.<key>` is a field on every one of them. Predicates are `<field><op><value>` with
+`=`, `!=`, `~`, `>`, `>=`, `<`, `<=`, or the named forms `has:<field>` and `links-to:<path>`,
+negated with a leading `!`. Repeating `--where` ANDs the terms; there is no `OR`, since that
+would require the precedence and quoting rules of a full expression language.
+
+An unknown field, predicate, or operator **exits `1`** — a query never returns zero rows
+because of a typo. Shortcut options such as `--status` cannot be combined with composable
+ones, and predicates are deliberately not configurable so a checked-in one cannot silently
+filter everyone's queries.
+
+Without any composable option the six original kinds emit their historical payloads
+unchanged, so `md query code-blocks` still groups by language while
+`md query code-blocks --select file,line` returns flat rows.
+
 #### `md index <action> [directory]`
 
 Inspect and manage the persistent parsed-workspace cache.

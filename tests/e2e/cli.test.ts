@@ -1814,3 +1814,181 @@ describe("md fix", () => {
     }
   });
 });
+
+describe("md query composable predicates", () => {
+  async function inWorkspace(body: (dir: string) => Promise<void>): Promise<void> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-query-e2e-"));
+    try {
+      fs.writeFileSync(
+        path.join(dir, "a.md"),
+        "---\nowner: alice\ntags: [api, cli]\n---\n# A\n\n## Sub\n\n- [ ] one\n- [x] two\n\n[G](./b.md)\n\n```ts\ncode();\n```\n",
+      );
+      fs.writeFileSync(path.join(dir, "b.md"), "---\nowner: bob\n---\n## No H1\n\n- [ ] three\n");
+      await body(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("leaves the shortcut kinds byte-identical without composable options", async () => {
+    await inWorkspace(async (dir) => {
+      const tasks = JSON.parse((await runCliIn(dir, "md", "query", "tasks", "-fj")).stdout);
+      expect(Object.keys(tasks)).toEqual(["kind", "directory", "count", "results", "summary"]);
+      expect(tasks.results[0]).toEqual(
+        expect.objectContaining({ line: expect.any(Number), checked: false, text: "one" }),
+      );
+
+      // code-blocks still groups by language without composable options.
+      const blocks = JSON.parse((await runCliIn(dir, "md", "query", "code-blocks", "-fj")).stdout);
+      expect(blocks.results[0]).toMatchObject({ language: "ts", count: 1 });
+      expect(blocks.fields).toBeUndefined();
+    });
+  });
+
+  it("switches code-blocks to flat rows when a composable option is given", async () => {
+    await inWorkspace(async (dir) => {
+      const result = await runCliIn(
+        dir,
+        "md",
+        "query",
+        "code-blocks",
+        "--select",
+        "file,language",
+        "-fj",
+      );
+      const payload = JSON.parse(result.stdout);
+      expect(payload.fields).toEqual(["file", "language"]);
+      expect(payload.results).toEqual([{ file: expect.stringContaining("a.md"), language: "ts" }]);
+    });
+  });
+
+  it("agrees with the missing-h1 shortcut", async () => {
+    await inWorkspace(async (dir) => {
+      const composable = JSON.parse(
+        (await runCliIn(dir, "md", "query", "documents", "--where", "!has:h1", "-fj")).stdout,
+      );
+      const shortcut = JSON.parse((await runCliIn(dir, "md", "query", "missing-h1", "-fj")).stdout);
+      expect(composable.results.map((r: { file: string }) => r.file)).toEqual(
+        shortcut.results.map((r: { file: string }) => r.file),
+      );
+    });
+  });
+
+  it("filters, projects, and groups", async () => {
+    await inWorkspace(async (dir) => {
+      const links = JSON.parse(
+        (
+          await runCliIn(
+            dir,
+            "md",
+            "query",
+            "links",
+            "--where",
+            "links-to:b.md",
+            "--select",
+            "file,linkText",
+            "-fj",
+          )
+        ).stdout,
+      );
+      expect(links.results).toEqual([{ file: expect.stringContaining("a.md"), linkText: "G" }]);
+
+      const grouped = JSON.parse(
+        (
+          await runCliIn(
+            dir,
+            "md",
+            "query",
+            "tasks",
+            "--where",
+            "status=pending",
+            "--group-by",
+            "frontmatter.owner",
+            "-fj",
+          )
+        ).stdout,
+      );
+      expect(grouped.groupBy).toBe("frontmatter.owner");
+      expect(grouped.results.map((g: { key: string; count: number }) => [g.key, g.count])).toEqual([
+        ["alice", 1],
+        ["bob", 1],
+      ]);
+      expect(grouped.summary).toEqual({ matched: 2, groups: 2 });
+    });
+  });
+
+  it("renders a table in llm format and names the plan when nothing matches", async () => {
+    await inWorkspace(async (dir) => {
+      const table = await runCliIn(
+        dir,
+        "md",
+        "query",
+        "headings",
+        "--select",
+        "text,depth",
+        "--paths",
+        "relative",
+      );
+      expect(table.stdout).toContain("text");
+      expect(table.stdout).toContain("Sub");
+
+      const empty = await runCliIn(
+        dir,
+        "md",
+        "query",
+        "documents",
+        "--where",
+        "frontmatter.owner=nobody",
+      );
+      expect(empty.exitCode).toBe(0);
+      expect(empty.stdout).toContain("frontmatter.owner=nobody");
+    });
+  });
+
+  it("exits 1 on every kind of typo rather than matching nothing", async () => {
+    await inWorkspace(async (dir) => {
+      const cases: Array<[string[], RegExp]> = [
+        [["documents", "--where", "nope=1"], /Unknown field for documents: nope/],
+        [["documents", "--select", "line"], /md query links --select file,line/],
+        [["duplicates", "--where", "has:h1"], /does not support composable options/],
+        [["missing-h1", "--where", "has:h1"], /md query documents --where '!has:h1'/],
+        [["headings", "--where", "links-to:a.md"], /not available on headings/],
+        [["tasks", "--where", "checked=maybe"], /boolean field/],
+        [
+          ["tasks", "--where", "status=pending", "--status", "done"],
+          /--status belongs to a shortcut kind/,
+        ],
+      ];
+      for (const [args, message] of cases) {
+        const result = await runCliIn(dir, "md", "query", ...args);
+        expect(result.exitCode, args.join(" ")).toBe(1);
+        expect(result.stderr, args.join(" ")).toMatch(message);
+        expect(result.stdout).toBe("");
+      }
+    });
+  });
+
+  it("refuses predicates set from project configuration", async () => {
+    await inWorkspace(async (dir) => {
+      // Predicates are per-question; a checked-in one would silently filter
+      // every query anyone ran in the workspace.
+      fs.writeFileSync(
+        path.join(dir, ".claude-cli.yml"),
+        "version: 1\ncommands:\n  query:\n    where: ['has:h1']\n",
+      );
+      const result = await runCliIn(dir, "md", "query", "tasks");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toMatch(/Unknown commands\.query key: where/);
+    });
+  });
+
+  it("reports --where and --select as repeatable in describe", async () => {
+    const result = await runCli("describe", "md", "query", "-fj");
+    const options = JSON.parse(result.stdout).commands[0].options as Array<{
+      flags: string;
+      repeatable?: boolean;
+    }>;
+    const where = options.find((option) => option.flags.includes("--where"));
+    expect(where?.repeatable).toBe(true);
+  });
+});
