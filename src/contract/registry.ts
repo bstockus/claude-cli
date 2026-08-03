@@ -158,6 +158,17 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "agent-bundle.yaml is edited through a comment-preserving YAML document and is left byte-untouched when no manifest change is needed.",
   }),
+  agentCommand("import", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Imported, or dry run completed"),
+      USAGE,
+      FINDINGS("Blocking finding, or --check found drift"),
+    ],
+    notes:
+      "Approximate mappings alone do not fail import, unlike convert and validate, because approximation is the expected outcome of returning from a native format. A nonempty destination is refused unless --merge names a strategy.",
+  }),
   agentCommand("upgrade", {
     writes: true,
     stability: "experimental",

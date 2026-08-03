@@ -258,6 +258,7 @@ Cursor artifacts. Agent-bundle defaults deliberately live in `agent-bundle.yaml`
 
 ```bash
 claude-cli agent init release-helper --output ./my-bundle
+claude-cli agent import ./existing-plugin --output ./my-bundle
 claude-cli agent add skill prepare-release ./my-bundle
 claude-cli agent add hook pre-tool-use ./my-bundle
 claude-cli agent upgrade ./my-bundle --to-schema 2 --check
@@ -271,6 +272,11 @@ claude-cli agent convert ./my-bundle --target all --output ./dist --profile both
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
 claude-cli agent convert ./my-bundle --target all --output ./dist --check
 ```
+
+`agent import` is the inverse of `agent convert`: it turns an existing native plugin or
+project into a portable bundle, detecting the layout from the same target profiles the
+renderer uses. Untranslatable pieces are preserved under `native/<target>/` rather than
+dropped, and every input file gets a provenance row in `import-report.json`.
 
 `agent init` scaffolds a minimal, valid `schemaVersion: '2'` bundle and `agent add` adds one
 component at a time. Both are noninteractive, support `--dry-run`/`--check`, and report a

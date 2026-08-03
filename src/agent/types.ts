@@ -1,5 +1,6 @@
 import type { BundleMarketplace } from "./manifest.js";
 import type { UpgradeReport } from "./upgrade.js";
+import type { ImportReport } from "./import/normalize.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -153,7 +154,16 @@ export interface AgentPlan {
 
 export interface AgentResult {
   command:
-    "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs" | "init" | "add" | "upgrade";
+    | "convert"
+    | "validate"
+    | "inspect"
+    | "compat"
+    | "doctor"
+    | "specs"
+    | "init"
+    | "add"
+    | "upgrade"
+    | "import";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -170,6 +180,8 @@ export interface AgentResult {
   plan?: AgentPlan;
   /** Migration result, emitted by `agent upgrade`. */
   upgrade?: UpgradeReport;
+  /** Provenance report, emitted by `agent import`. */
+  import?: ImportReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

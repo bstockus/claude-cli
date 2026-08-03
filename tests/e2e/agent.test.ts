@@ -54,6 +54,7 @@ describe("agent CLI", () => {
       "init",
       "add",
       "upgrade",
+      "import",
     ])
       expect(result.stdout).toContain(command);
   });
@@ -477,5 +478,167 @@ describe("agent upgrade", () => {
     const result = await run("agent", "upgrade", legacy, "--to-schema", "2", "-fj");
     expect(result.exitCode).toBe(2);
     expect(JSON.parse(result.stdout).diagnostics[0].code).toBe("AB223");
+  });
+});
+
+describe("agent import", () => {
+  function converted(): { source: string; tree: string } {
+    const source = fixture();
+    const tree = path.join(os.tmpdir(), `agent-import-dist-${path.basename(source)}`);
+    temporary.push(tree);
+    return { source, tree };
+  }
+
+  it("completes the native to neutral to native loop", async () => {
+    const { source, tree } = converted();
+    expect(
+      (await run("agent", "convert", source, "--target", "claude-code", "--output", tree)).exitCode,
+    ).toBe(0);
+
+    const bundle = path.join(os.tmpdir(), `agent-import-bundle-${path.basename(source)}`);
+    temporary.push(bundle);
+    const imported = await run(
+      "agent",
+      "import",
+      path.join(tree, "claude-code", "plugin"),
+      "--output",
+      bundle,
+      "-fj",
+    );
+    expect(imported.exitCode, imported.stdout).toBe(0);
+    const payload = JSON.parse(imported.stdout);
+    expect(payload.import.from).toMatchObject({ target: "claude-code", profile: "plugin" });
+    expect(fs.existsSync(path.join(bundle, "agent-bundle.yaml"))).toBe(true);
+
+    // The imported bundle must itself be valid, then render back identically.
+    expect((await run("agent", "validate", bundle)).exitCode).toBe(0);
+    const back = path.join(os.tmpdir(), `agent-import-back-${path.basename(source)}`);
+    temporary.push(back);
+    expect(
+      (await run("agent", "convert", bundle, "--target", "claude-code", "--output", back)).exitCode,
+    ).toBe(0);
+
+    const list = (root: string) =>
+      fs
+        .readdirSync(root, { recursive: true })
+        .map(String)
+        .filter((entry) => fs.statSync(path.join(root, entry)).isFile())
+        .sort();
+    const original = path.join(tree, "claude-code", "plugin");
+    const rebuilt = path.join(back, "claude-code", "plugin");
+    expect(list(rebuilt)).toEqual(list(original));
+    for (const entry of list(original))
+      expect(
+        fs
+          .readFileSync(path.join(rebuilt, entry))
+          .equals(fs.readFileSync(path.join(original, entry))),
+        entry,
+      ).toBe(true);
+  });
+
+  it("is idempotent", async () => {
+    const { source, tree } = converted();
+    await run("agent", "convert", source, "--target", "codex", "--output", tree);
+    const plugin = path.join(tree, "codex", "plugin");
+    const a = path.join(os.tmpdir(), `agent-import-a-${path.basename(source)}`);
+    const b = path.join(os.tmpdir(), `agent-import-b-${path.basename(source)}`);
+    temporary.push(a, b);
+    await run("agent", "import", plugin, "--output", a);
+    await run("agent", "import", plugin, "--output", b);
+
+    const list = (root: string) =>
+      fs
+        .readdirSync(root, { recursive: true })
+        .map(String)
+        .filter((entry) => fs.statSync(path.join(root, entry)).isFile())
+        .sort();
+    expect(list(b)).toEqual(list(a));
+    for (const entry of list(a))
+      expect(
+        fs.readFileSync(path.join(b, entry)).equals(fs.readFileSync(path.join(a, entry))),
+        entry,
+      ).toBe(true);
+  });
+
+  it("refuses a nonempty destination unless a merge strategy is named", async () => {
+    const { source, tree } = converted();
+    await run("agent", "convert", source, "--target", "claude-code", "--output", tree);
+    const plugin = path.join(tree, "claude-code", "plugin");
+    const bundle = path.join(os.tmpdir(), `agent-import-merge-${path.basename(source)}`);
+    temporary.push(bundle);
+    fs.mkdirSync(bundle, { recursive: true });
+    fs.writeFileSync(path.join(bundle, "keep.txt"), "mine");
+
+    const refused = await run("agent", "import", plugin, "--output", bundle, "-fj");
+    expect(refused.exitCode).toBe(2);
+    expect(JSON.parse(refused.stdout).diagnostics[0].code).toBe("AB236");
+    expect(fs.readFileSync(path.join(bundle, "keep.txt"), "utf8")).toBe("mine");
+
+    const merged = await run(
+      "agent",
+      "import",
+      plugin,
+      "--output",
+      bundle,
+      "--merge",
+      "skip-existing",
+      "-fj",
+    );
+    expect(merged.exitCode, merged.stdout).toBe(0);
+    expect(fs.readFileSync(path.join(bundle, "keep.txt"), "utf8")).toBe("mine");
+  });
+
+  it("writes only overlay files under --merge native-only", async () => {
+    const { source, tree } = converted();
+    await run("agent", "convert", source, "--target", "cursor", "--output", tree);
+    const bundle = path.join(os.tmpdir(), `agent-import-native-${path.basename(source)}`);
+    temporary.push(bundle);
+    const result = await run(
+      "agent",
+      "import",
+      path.join(tree, "cursor", "plugin"),
+      "--output",
+      bundle,
+      "--merge",
+      "native-only",
+      "-fj",
+    );
+    expect(result.exitCode, result.stdout).toBe(0);
+    expect(fs.existsSync(path.join(bundle, "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(bundle, "native", "cursor"))).toBe(true);
+  });
+
+  it("writes nothing under --dry-run", async () => {
+    const { source, tree } = converted();
+    await run("agent", "convert", source, "--target", "claude-code", "--output", tree);
+    const bundle = path.join(os.tmpdir(), `agent-import-dry-${path.basename(source)}`);
+    temporary.push(bundle);
+    const result = await run(
+      "agent",
+      "import",
+      path.join(tree, "claude-code", "plugin"),
+      "--output",
+      bundle,
+      "--dry-run",
+      "-fj",
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).dryRun).toBe(true);
+    expect(fs.existsSync(bundle)).toBe(false);
+  });
+
+  it("refuses an output directory inside the source", async () => {
+    const { source, tree } = converted();
+    await run("agent", "convert", source, "--target", "claude-code", "--output", tree);
+    const plugin = path.join(tree, "claude-code", "plugin");
+    const result = await run(
+      "agent",
+      "import",
+      plugin,
+      "--output",
+      path.join(plugin, "inner"),
+      "-fj",
+    );
+    expect(result.exitCode).toBe(1);
   });
 });

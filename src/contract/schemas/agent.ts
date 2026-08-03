@@ -19,6 +19,7 @@ export const agentResultSchema: SchemaEntry = {
     "agent init",
     "agent add",
     "agent upgrade",
+    "agent import",
   ],
   schema: {
     $schema: DRAFT,
@@ -40,6 +41,7 @@ export const agentResultSchema: SchemaEntry = {
           "init",
           "add",
           "upgrade",
+          "import",
         ],
       },
       ok: { type: "boolean" },

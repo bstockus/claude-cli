@@ -46,6 +46,7 @@ import { agentSpecsAction } from "./commands/agent-specs.js";
 import type { AgentAddOptions } from "./commands/agent-scaffold.js";
 import { agentAddAction, agentInitAction } from "./commands/agent-scaffold.js";
 import { agentUpgradeAction } from "./commands/agent-upgrade.js";
+import { agentImportAction } from "./commands/agent-import.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -250,6 +251,29 @@ agent
   )
   .action((kind: string, name: string, bundle: string | undefined, opts: AgentAddOptions) =>
     agentActionBoundary("add", opts, () => agentAddAction(kind, name, bundle, opts)),
+  );
+
+agent
+  .command("import")
+  .description("Import an existing native plugin or project into a portable bundle")
+  .argument("<source>", "Native plugin or project root")
+  .requiredOption("--output <dir>", "Bundle root to create")
+  .option("--from <spec>", "Source layout: auto, <target>, or <target>-<profile>", "auto")
+  .option("--scope <scope>", "Source scope: auto, plugin, project", "auto")
+  .option("--merge <strategy>", "refuse, skip-existing, overwrite, native-only", "refuse")
+  .option("--bundle-name <name>", "Bundle name; defaults to the source directory name")
+  .option("--native-only", "Skip normalization and preserve everything as an overlay")
+  .option("--strict", "Treat approximations as blocking findings")
+  .option("--dry-run", "Report the import without writing")
+  .option("--check", "Compare against an existing bundle without writing")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nDetection is driven by the target conformance profiles, so it cannot drift\nfrom what agent convert emits. Untranslatable pieces are preserved under\nnative/<target>/ rather than dropped.\n\nExit codes:\n  0  Imported, or dry run completed\n  1  Invocation or I/O error\n  2  Blocking finding, or --check found drift",
+  )
+  .action((source: string, opts: Parameters<typeof agentImportAction>[1]) =>
+    agentActionBoundary("import", opts, () => agentImportAction(source, opts)),
   );
 
 agent
