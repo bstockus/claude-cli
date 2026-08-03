@@ -1,0 +1,56 @@
+# Documentation contents
+
+This directory is the reference documentation for `claude-cli`.
+
+## Reference
+
+- [Complete command listing](commands.md)
+- [Project configuration schema](configuration.md)
+- [Shared Markdown command behavior](commands/md-common.md)
+
+## Agent commands
+
+- [`agent convert`](commands/agent-convert.md)
+- [`agent validate`](commands/agent-validate.md)
+- [`agent inspect`](commands/agent-inspect.md)
+- [`agent compat`](commands/agent-compat.md)
+
+## Other top-level commands
+
+- [`check-update`](commands/check-update.md)
+
+## Markdown validation commands
+
+- [`md lint`](commands/md-lint.md)
+- [`md lint-dir`](commands/md-lint-dir.md)
+- [`md check-urls`](commands/md-check-urls.md)
+- [`md validate-frontmatter`](commands/md-validate-frontmatter.md)
+- [`md audit`](commands/md-audit.md)
+
+## Markdown reference and workspace commands
+
+- [`md refs`](commands/md-refs.md)
+- [`md refs-to`](commands/md-refs-to.md)
+- [`md links`](commands/md-links.md)
+- [`md orphans`](commands/md-orphans.md)
+- [`md graph`](commands/md-graph.md)
+- [`md query`](commands/md-query.md)
+- [`md index`](commands/md-index.md)
+
+## Markdown analysis commands
+
+- [`md headers`](commands/md-headers.md)
+- [`md outline`](commands/md-outline.md)
+- [`md toc`](commands/md-toc.md)
+- [`md stats`](commands/md-stats.md)
+- [`md code-blocks`](commands/md-code-blocks.md)
+- [`md structure`](commands/md-structure.md)
+- [`md section`](commands/md-section.md)
+- [`md frontmatter`](commands/md-frontmatter.md)
+- [`md tasks`](commands/md-tasks.md)
+- [`md tables`](commands/md-tables.md)
+
+## Markdown modification commands
+
+- [`md rename-heading`](commands/md-rename-heading.md)
+- [`md rename-file`](commands/md-rename-file.md)
