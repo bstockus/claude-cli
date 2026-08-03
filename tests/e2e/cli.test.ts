@@ -1815,6 +1815,44 @@ describe("md fix", () => {
   });
 });
 
+describe("md rename-heading transaction", () => {
+  it("updates every file and leaves no staging file behind", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rename-heading-tx-"));
+    try {
+      fs.writeFileSync(
+        path.join(dir, "doc.md"),
+        "# Doc\n\n## Old Section\n\ntext\n\n[a](#old-section)\n",
+      );
+      fs.writeFileSync(
+        path.join(dir, "other.md"),
+        "# Other\n\nSee [x](./doc.md#old-section) and [y](./doc.md#old-section).\n",
+      );
+
+      const result = await runCliIn(
+        dir,
+        "md",
+        "rename-heading",
+        "doc.md",
+        "Old Section",
+        "New Section",
+        "--directory",
+        ".",
+      );
+      expect(result.exitCode).toBe(0);
+      expect(fs.readFileSync(path.join(dir, "doc.md"), "utf-8")).toBe(
+        "# Doc\n\n## New Section\n\ntext\n\n[a](#new-section)\n",
+      );
+      expect(fs.readFileSync(path.join(dir, "other.md"), "utf-8")).toBe(
+        "# Other\n\nSee [x](./doc.md#new-section) and [y](./doc.md#new-section).\n",
+      );
+      // The write now stages siblings and commits by rename; none may survive.
+      expect(fs.readdirSync(dir).sort()).toEqual(["doc.md", "other.md"]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("md query composable predicates", () => {
   async function inWorkspace(body: (dir: string) => Promise<void>): Promise<void> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-query-e2e-"));

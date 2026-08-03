@@ -328,3 +328,28 @@ export function applyPlan(plan: EditPlan, options: ApplyOptions = {}): AppliedPl
     edits: plan.files.reduce((total, entry) => total + entry.edits.length, 0),
   };
 }
+
+/**
+ * The root every edit in a plan must stay inside.
+ *
+ * A configured workspace is the authority when there is one. Without a config
+ * file `config.root` is only the working directory, and refusing an absolute
+ * path outside it would reject `claude-cli md fix /elsewhere/docs` for no
+ * benefit — so the boundary becomes the directory containing the files the
+ * caller actually selected. Either way an edit cannot reach beyond what was
+ * asked for, which is what the guard is for.
+ */
+export function containmentRoot(
+  files: readonly string[],
+  config: { root: string; configPath?: string },
+): string {
+  if (config.configPath || !files.length) return config.root;
+  const segments = files.map((file) => path.dirname(path.resolve(file)).split(path.sep));
+  const common: string[] = [];
+  for (let index = 0; index < segments[0].length; index++) {
+    const part = segments[0][index];
+    if (!segments.every((candidate) => candidate[index] === part)) break;
+    common.push(part);
+  }
+  return common.join(path.sep) || path.sep;
+}

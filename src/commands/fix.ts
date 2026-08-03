@@ -1,8 +1,8 @@
-import path from "node:path";
 import type { OutputFormat } from "../types.js";
 import {
   applyPlan,
   buildPlan,
+  containmentRoot,
   snapshot,
   type EditPlan,
   type FileSnapshot,
@@ -94,28 +94,6 @@ function resolveMode(opts: FixOptions): FixMode {
     throw new Error("--check, --write, and --dry-run cannot be used together");
   }
   return requested[0] ?? "check";
-}
-
-/**
- * The root every edit must stay inside.
- *
- * A configured workspace is the authority when there is one. Without a config
- * file `config.root` is just the working directory, and refusing to fix an
- * absolute path outside it would reject `claude-cli md fix /elsewhere/docs`
- * for no benefit — so the boundary becomes the directory containing the files
- * the user actually selected. Either way a fixer cannot emit an edit reaching
- * beyond what was asked for, which is what the guard is for.
- */
-function containmentRoot(files: readonly string[]): string {
-  if (runtime().config.configPath || !files.length) return runtime().config.root;
-  const segments = files.map((file) => path.dirname(path.resolve(file)).split(path.sep));
-  const common: string[] = [];
-  for (let index = 0; index < segments[0].length; index++) {
-    const part = segments[0][index];
-    if (!segments.every((candidate) => candidate[index] === part)) break;
-    common.push(part);
-  }
-  return common.join(path.sep) || path.sep;
 }
 
 function truncate(value: string, limit = 120): string {
@@ -239,7 +217,7 @@ export async function fixAction(inputs: string[], opts: FixOptions): Promise<voi
     changedSince: opts.changedSince,
   });
 
-  const root = containmentRoot(files);
+  const root = containmentRoot(files, runtime().config);
   const snapshots = new Map<string, FileSnapshot>();
   const context: FixerContext = {
     root,

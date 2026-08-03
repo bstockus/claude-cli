@@ -8,7 +8,16 @@ import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
 import type { OutputFormat } from "../types.js";
 import { jsonPayload } from "../result.js";
-import { applyEdits, type TextEdit } from "../edit-plan.js";
+import {
+  applyEdits,
+  applyPlan,
+  buildPlan,
+  containmentRoot,
+  snapshot,
+  type FileSnapshot,
+  type PlannedEdit,
+  type TextEdit,
+} from "../edit-plan.js";
 
 interface RenameHeadingOptions {
   envelope?: boolean;
@@ -94,13 +103,25 @@ export async function renameHeadingAction(
   }
 
   const updates: AnchorUpdate[] = [];
-  const editsByFile = new Map<string, TextEdit[]>();
-  const contents = new Map<string, string>();
-  editsByFile.set(filePath, [headingEdit]);
+  const snapshots = new Map<string, FileSnapshot>();
+  const planned: PlannedEdit[] = [
+    {
+      file: filePath,
+      ...headingEdit,
+      expected: content.slice(headingEdit.start, headingEdit.end),
+      replacement: headingEdit.value,
+      diagnostic: {
+        rule: "rename-heading",
+        line: matched.line,
+        message: `Rename heading to ${newHeading}`,
+      },
+    },
+  ];
 
   for (const scanFile of filesToScan) {
-    const scanContent = scanFile === filePath ? content : fs.readFileSync(scanFile, "utf-8");
-    contents.set(scanFile, scanContent);
+    const taken = snapshot(scanFile);
+    snapshots.set(scanFile, taken);
+    const scanContent = scanFile === filePath ? content : taken.content;
     const links = extractLinks(
       scanFile === filePath ? tree : parseMarkdown(scanContent),
       scanContent,
@@ -135,9 +156,19 @@ export async function renameHeadingAction(
         newRef: newTarget,
       });
       if (link.destinationStart !== undefined && link.destinationEnd !== undefined) {
-        const edits = editsByFile.get(scanFile) ?? [];
-        edits.push({ start: link.destinationStart, end: link.destinationEnd, value: newTarget });
-        editsByFile.set(scanFile, edits);
+        planned.push({
+          file: scanFile,
+          start: link.destinationStart,
+          end: link.destinationEnd,
+          value: newTarget,
+          expected: scanContent.slice(link.destinationStart, link.destinationEnd),
+          replacement: newTarget,
+          diagnostic: {
+            rule: "rename-heading",
+            line: link.destinationLine,
+            message: `Update anchor to ${newTarget}`,
+          },
+        });
       }
     }
   }
@@ -190,9 +221,16 @@ export async function renameHeadingAction(
   }
 
   if (opts.dryRun) return;
-  for (const [changedFile, edits] of editsByFile) {
-    const original = contents.get(changedFile) ?? content;
-    fs.writeFileSync(changedFile, applyEdits(original, edits), "utf-8");
-    runtime().workspace.invalidate(changedFile);
+
+  // Applied as one transaction rather than a bare write loop: the same edits
+  // and the same applyEdits, so the bytes written are unchanged, but a stale
+  // input or a pair of overlapping edits now refuses instead of silently
+  // letting the last one win.
+  const plan = buildPlan(containmentRoot(filesToScan, runtime().config), planned, snapshots);
+  if (plan.conflicts.length) {
+    throw new Error(
+      `Refusing to write: ${plan.conflicts.map((conflict) => conflict.message).join("; ")}`,
+    );
   }
+  applyPlan(plan, { invalidate: (file) => runtime().workspace.invalidate(file) });
 }
