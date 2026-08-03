@@ -44,6 +44,8 @@ import {
 } from "./commands/agent.js";
 import { agentSpecsAction } from "./commands/agent-specs.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
+import { describeAction } from "./commands/describe.js";
+import { schemaAction } from "./commands/schema.js";
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -204,6 +206,34 @@ program
     "\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json\n\nQueries the registry directly rather than using the 24h cache.\n\nExit codes:\n  0  Already on the latest version\n  1  Could not reach the registry\n  2  A newer version is available",
   )
   .action((opts: { format: string }) => checkUpdateAction(packageName, version, opts));
+
+program
+  .command("describe")
+  .description("Describe the CLI contract: commands, options, exit codes, and output schemas")
+  .argument("[command...]", "Optional command path, for example: md graph")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .addHelpText(
+    "after",
+    "\nExamples:\n  claude-cli describe --format json\n  claude-cli describe md graph --format json\n\nReports the static contract; project configuration is not applied.\n\nExit codes:\n  0  Description written to stdout\n  1  Unknown command path or invalid format",
+  )
+  .action((commandPath: string[], opts: { format: string }) =>
+    describeAction(program, commandPath, {
+      ...opts,
+      toolName: packageName,
+      toolVersion: version,
+    }),
+  );
+
+program
+  .command("schema")
+  .description("Print a published output schema, or list the available schemas")
+  .argument("[id]", "Schema id, for example: agent-result")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .addHelpText(
+    "after",
+    "\nWith an id, the schema document is written regardless of --format.\nSchema ids are identifiers, not fetchable URLs.\n\nExit codes:\n  0  Schema or index written to stdout\n  1  Unknown schema id or invalid format",
+  )
+  .action((id: string | undefined, opts: { format: string }) => schemaAction(id, opts));
 
 // Internal: refreshes the cached latest version. Spawned detached by the notifier.
 program

@@ -13,6 +13,31 @@ export const REFRESH_COMMAND = "__refresh-update-cache";
 export const CHECK_COMMAND = "check-update";
 
 /**
+ * Contract-discovery commands. Their stdout is unconditionally a machine
+ * document, so a notice is never useful alongside them.
+ */
+export const DESCRIBE_COMMAND = "describe";
+export const SCHEMA_COMMAND = "schema";
+
+/**
+ * The machine-stream guarantees, published through `describe` so consumers can
+ * read them rather than infer them. Exported from here, next to the gate that
+ * enforces them, so the two cannot drift.
+ */
+export const NOTIFIER_CONTRACT = {
+  description: "The update notice is advisory only and never appears on a machine-readable stream.",
+  stream: "stderr",
+  suppressedWhen: [
+    "CLAUDE_CLI_NO_UPDATE_NOTIFIER=1",
+    "CI is set",
+    "stderr is not a TTY",
+    "--format is json, jsonl, or sarif, including a project-configured format",
+    "the command is check-update, describe, schema, or the internal cache refresh",
+  ],
+  optOutEnv: "CLAUDE_CLI_NO_UPDATE_NOTIFIER",
+} as const;
+
+/**
  * How long a held refresh lock is trusted. Must exceed the child's own fetch
  * timeout so a working refresh is never treated as abandoned.
  */
@@ -196,6 +221,10 @@ export function isNotifierAllowed(ctx: Omit<NotifyDecision, "cache" | "currentVe
   // thing itself — a passive notice alongside it would just be duplication.
   if (ctx.argv.includes(REFRESH_COMMAND)) return false;
   if (ctx.argv.includes(CHECK_COMMAND)) return false;
+  // Contract-discovery commands always emit a machine document, and agents that
+  // poll them should not keep spawning the background refresh.
+  if (ctx.argv.includes(DESCRIBE_COMMAND)) return false;
+  if (ctx.argv.includes(SCHEMA_COMMAND)) return false;
   return true;
 }
 

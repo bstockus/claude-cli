@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   CHECK_INTERVAL_MS,
   LOCK_STALE_MS,
+  NOTIFIER_CONTRACT,
   acquireRefreshLock,
   formatNotice,
   getCachePath,
@@ -183,6 +184,35 @@ describe("isNotifierAllowed", () => {
 
   it("stays quiet during an explicit check-update", () => {
     expect(isNotifierAllowed({ ...allowedCtx, argv: ["check-update"] })).toBe(false);
+  });
+
+  it("stays quiet for the contract discovery commands", () => {
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["describe"] })).toBe(false);
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["schema", "md-graph"] })).toBe(false);
+  });
+
+  it("enforces every condition the published contract lists", () => {
+    // NOTIFIER_CONTRACT is what `describe` reports to consumers, so each listed
+    // condition must actually suppress the notice.
+    const cases: Record<string, Parameters<typeof isNotifierAllowed>[0]> = {
+      "CLAUDE_CLI_NO_UPDATE_NOTIFIER=1": {
+        ...allowedCtx,
+        env: { CLAUDE_CLI_NO_UPDATE_NOTIFIER: "1" },
+      },
+      "CI is set": { ...allowedCtx, env: { CI: "true" } },
+      "stderr is not a TTY": { ...allowedCtx, isTty: false },
+      "--format is json, jsonl, or sarif, including a project-configured format": {
+        ...allowedCtx,
+        argv: ["md", "lint", "--format=sarif"],
+      },
+      "the command is check-update, describe, schema, or the internal cache refresh": {
+        ...allowedCtx,
+        argv: ["describe"],
+      },
+    };
+    expect(Object.keys(cases).sort()).toEqual([...NOTIFIER_CONTRACT.suppressedWhen].sort());
+    for (const [condition, ctx] of Object.entries(cases))
+      expect(isNotifierAllowed(ctx), condition).toBe(false);
   });
 });
 
