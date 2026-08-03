@@ -93,6 +93,15 @@ const notifierArgv =
     ? [...argv, `--format=${String(configuredFormat)}`]
     : argv;
 
+// A downstream reader closing the pipe early is normal shell usage, not an error:
+// `describe -fj | head` and `... | jq '.commands[0]'` both do it. Payloads under the
+// pipe buffer are written synchronously and never notice, but larger ones (describe
+// is ~150KB) would otherwise surface an unhandled EPIPE and crash.
+for (const stream of [process.stdout, process.stderr])
+  stream.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code !== "EPIPE") throw error;
+  });
+
 // Reads the cached result and may schedule a detached refresh. Never blocks and
 // never writes to a machine-readable stream — see src/update-notifier.ts.
 installUpdateNotifier({

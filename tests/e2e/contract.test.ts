@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { exec as execShell, execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -112,6 +112,18 @@ describe("describe", () => {
     expect(described.commands).toHaveLength(1);
     expect(described.commands[0].id).toBe("md graph");
     expect(described.commands[0].usage).toContain("md graph");
+  });
+
+  it("survives a reader that closes the pipe early", async () => {
+    // describe is ~150KB, past the pipe buffer, so its write completes
+    // asynchronously. `describe -fj | head` and `| jq '.commands[0]'` are normal
+    // usage and must not surface an unhandled EPIPE.
+    const { stdout, stderr } = await promisify(execShell)(
+      `node ${JSON.stringify(cli)} describe --format json | head -c 200`,
+      { env: { ...process.env, CI: "1" } },
+    );
+    expect(stderr).not.toMatch(/EPIPE/);
+    expect(stdout.startsWith("{")).toBe(true);
   });
 
   it("rejects an unknown command path and an unsupported format", async () => {
