@@ -283,6 +283,11 @@ const CONTRACTS: CommandContract[] = [
 
   // Markdown: workspace data
   inspection("query", { outputSchema: "md-query" }),
+  inspection("diff", {
+    outputSchema: "md-diff",
+    notes:
+      "Describes two states rather than judging them, so differences never change the exit code. Heading renames matched by position carry heuristic: true and are a guess, not a fact; a heading whose text changed and which also moved is reported as a removal plus an addition instead.",
+  }),
   inspection("context", {
     outputSchema: "md-context",
     notes:

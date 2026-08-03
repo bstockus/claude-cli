@@ -177,6 +177,7 @@ const COMMAND_OPTIONS: Record<string, Set<string>> = {
     "include",
     "exclude",
   ]),
+  diff: new Set(["format", "paths", "since", "summary", "include", "exclude"]),
   index: new Set(["format", "paths", "include", "exclude"]),
 };
 
@@ -337,6 +338,7 @@ function validateCommandOption(command: string, key: string, value: unknown): vo
       "changedSince",
       "target",
       "field",
+      "since",
     ].includes(key) &&
     typeof value !== "string"
   ) {

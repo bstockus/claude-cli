@@ -684,6 +684,34 @@ Options: `--depth <n>` (0–6, default 1), `--section <heading>` (repeatable), `
 `--budget <bytes>` (0 is unlimited), `--backlinks`, `--children`, `--frontmatter`, `--include`,
 `--exclude`.
 
+#### `md diff <a> [b]`
+
+Summarize Markdown changes by structure rather than by text.
+
+```bash
+claude-cli md diff --since origin/main docs
+claude-cli md diff old.md new.md --format json
+claude-cli md diff --since HEAD~1 --summary
+```
+
+Reports headings added, removed, moved, or renamed; frontmatter keys; links whose resolved
+target changed; task state; code-block language and body; and tables or diagrams appearing and
+disappearing. Old and new line numbers and slugs are kept on both sides, so a consumer can
+repair anchors straight from the JSON.
+
+Headings are matched conservatively — exact slug, then exact text, then position. Only the
+positional pass yields a rename, and it is always flagged `heuristic: true`. String similarity
+matching is deliberately not used; a wrong rename is worse than an honest add plus remove.
+
+`--since` is the **base of the comparison**, not the `--changed-since` input filter used
+elsewhere. Base content is read with `git show`; the worktree is never touched, and a revision
+git cannot resolve is an error rather than "every file is new".
+
+Exits `0` whether or not anything changed — a diff describes two states, it does not judge
+them.
+
+Options: `--since <revision>`, `--summary`, `--include`, `--exclude`.
+
 ### Document Analysis
 
 #### `md headers <file>`

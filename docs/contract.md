@@ -151,6 +151,7 @@ guarantees are unaffected.
 | `md-orphans`        | `md orphans`                                                               |
 | `md-index`          | `md index`                                                                 |
 | `md-context`        | `md context`                                                               |
+| `md-diff`           | `md diff`                                                                  |
 | `agent-result`      | Every `agent` subcommand, including the failure form.                      |
 | `check-update`      | `check-update`                                                             |
 | `describe`          | `describe --format json`                                                   |

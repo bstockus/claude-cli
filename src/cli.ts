@@ -26,6 +26,7 @@ import { validateFrontmatterAction } from "./commands/validate-frontmatter.js";
 import { auditAction } from "./commands/audit.js";
 import { queryAction } from "./commands/query.js";
 import { contextAction } from "./commands/context.js";
+import { diffAction } from "./commands/diff.js";
 import { indexAction } from "./commands/index.js";
 import { checkUpdateAction, refreshUpdateCacheAction } from "./commands/update-check.js";
 import { installUpdateNotifier, CHECK_COMMAND, REFRESH_COMMAND } from "./update-notifier.js";
@@ -812,6 +813,45 @@ common(md.command("context"))
           backlinks: false,
           children: true,
           frontmatter: false,
+          include: projectConfig.files.include,
+          exclude: projectConfig.files.exclude,
+        },
+        opts,
+      ) as never,
+    ),
+  );
+
+common(md.command("diff"))
+  .description("Summarize Markdown changes by structure rather than by text")
+  .argument("[a]", "First file, or the directory to scan with --since")
+  .argument("[b]", "Second file; omit when using --since")
+  .option("--since <revision>", "Compare the worktree against a Git revision")
+  .option("--summary", "Show per-file totals without individual changes")
+  .option("--no-summary", "Show individual changes")
+  .option("--include <glob>", "Markdown include glob (repeatable)", collect)
+  .option("--exclude <glob>", "Workspace exclude glob (repeatable)", collect)
+  .addHelpText(
+    "after",
+    "\nModes:\n" +
+      "  md diff <a> <b>              Compare two files.\n" +
+      "  md diff --since <rev> [dir]  Compare a revision against the worktree.\n" +
+      "Giving two paths and --since together is an error, as is giving neither.\n\n" +
+      "--since names the base of the comparison. It is not --changed-since, which\n" +
+      "only filters an input set.\n\n" +
+      "Renames are matched conservatively and a positional match is reported as a\n" +
+      "heuristic, not a fact.\n\n" +
+      "Exit codes:\n" +
+      "  0  Report written to stdout, whether or not anything changed\n" +
+      "  1  Bad invocation, a missing file, or an unreadable revision",
+  )
+  .action((a: string | undefined, b: string | undefined, opts: Record<string, unknown>) =>
+    diffAction(
+      a,
+      b,
+      commandOptions(
+        "diff",
+        {
+          summary: false,
           include: projectConfig.files.include,
           exclude: projectConfig.files.exclude,
         },

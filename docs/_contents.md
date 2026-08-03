@@ -64,6 +64,7 @@ This directory is the reference documentation for `claude-cli`.
 - [`md tasks`](commands/md-tasks.md)
 - [`md tables`](commands/md-tables.md)
 - [`md context`](commands/md-context.md)
+- [`md diff`](commands/md-diff.md)
 
 ## Markdown modification commands
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import fs from "node:fs";
@@ -1482,5 +1482,132 @@ describe("md context", () => {
       expect(badDepth.exitCode).toBe(1);
       expect(badDepth.stderr).toMatch(/--depth must be an integer from 0 to 6/);
     });
+  });
+});
+
+describe("md diff", () => {
+  function repo(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-diff-e2e-"));
+    const env = {
+      GIT_AUTHOR_NAME: "T",
+      GIT_AUTHOR_EMAIL: "t@example.com",
+      GIT_COMMITTER_NAME: "T",
+      GIT_COMMITTER_EMAIL: "t@example.com",
+    };
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", dir, ...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, ...env },
+      });
+    git("init", "-q", "-b", "main");
+    fs.writeFileSync(path.join(dir, "a.md"), "# Title\n\n- [ ] Ship it\n\n[G](./old.md)\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "first");
+    return dir;
+  }
+
+  it("compares two files by structure", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-diff-files-"));
+    try {
+      fs.writeFileSync(path.join(dir, "old.md"), "# Top\n\n## Alpha\nbody\n");
+      fs.writeFileSync(path.join(dir, "new.md"), "# Top\n\n## Beta\nbody\n");
+      const result = await runCliIn(dir, "md", "diff", "old.md", "new.md", "-fj");
+      expect(result.exitCode).toBe(0);
+      const report = JSON.parse(result.stdout);
+      expect(report.mode).toBe("files");
+      expect(report.files[0].headings).toContainEqual(
+        expect.objectContaining({
+          kind: "renamed",
+          oldText: "Alpha",
+          newText: "Beta",
+          heuristic: true,
+        }),
+      );
+      expect(report.totals.heuristicRenames).toBe(1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("labels heuristic renames in the text output", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "md-diff-text-"));
+    try {
+      fs.writeFileSync(path.join(dir, "old.md"), "# Top\n\n## Alpha\nbody\n");
+      fs.writeFileSync(path.join(dir, "new.md"), "# Top\n\n## Beta\nbody\n");
+      const result = await runCliIn(dir, "md", "diff", "old.md", "new.md", "--paths", "relative");
+      expect(result.stdout).toContain('"Alpha" -> "Beta"');
+      expect(result.stdout).toContain("heuristic");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("compares the worktree against a revision", async () => {
+    const dir = repo();
+    try {
+      fs.writeFileSync(path.join(dir, "a.md"), "# Title\n\n- [x] Ship it\n\n[G](./new.md)\n");
+      fs.writeFileSync(path.join(dir, "b.md"), "# Added\n");
+      const result = await runCliIn(dir, "md", "diff", "--since", "HEAD", "-fj");
+      expect(result.exitCode).toBe(0);
+      const report = JSON.parse(result.stdout);
+      expect(report.mode).toBe("revision");
+      expect(report.base).toBe("HEAD");
+      expect(report.baseCommit).toMatch(/^[0-9a-f]{40}$/);
+
+      const changed = report.files.find((f: { file: string }) => f.file.endsWith("a.md"));
+      expect(changed.status).toBe("modified");
+      expect(changed.tasks[0]).toMatchObject({ oldChecked: false, newChecked: true });
+      expect(changed.links[0]).toMatchObject({ oldTarget: "./old.md", newTarget: "./new.md" });
+
+      const added = report.files.find((f: { file: string }) => f.file.endsWith("b.md"));
+      expect(added.status).toBe("added");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a deleted document as removed", async () => {
+    const dir = repo();
+    try {
+      fs.rmSync(path.join(dir, "a.md"));
+      const report = JSON.parse(
+        (await runCliIn(dir, "md", "diff", "--since", "HEAD", "-fj")).stdout,
+      );
+      expect(report.files[0].status).toBe("removed");
+      expect(report.files[0].headings[0]).toMatchObject({ kind: "removed", oldText: "Title" });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("exits 0 when nothing changed", async () => {
+    const dir = repo();
+    try {
+      const result = await runCliIn(dir, "md", "diff", "--since", "HEAD");
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("No Markdown changes.");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects both modes at once, neither mode, and an unknown revision", async () => {
+    const dir = repo();
+    try {
+      const both = await runCliIn(dir, "md", "diff", "a.md", "a.md", "--since", "HEAD");
+      expect(both.exitCode).toBe(1);
+      expect(both.stderr).toMatch(/--since cannot be combined with two paths/);
+
+      const neither = await runCliIn(dir, "md", "diff");
+      expect(neither.exitCode).toBe(1);
+      expect(neither.stderr).toMatch(/needs two paths, or --since/);
+
+      // A typo'd revision must fail loudly, never be read as "all files are new".
+      const bogus = await runCliIn(dir, "md", "diff", "--since", "no-such-ref");
+      expect(bogus.exitCode).toBe(1);
+      expect(bogus.stderr).toMatch(/Unable to read revision no-such-ref/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

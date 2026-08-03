@@ -51,6 +51,29 @@ export function parseFrontmatter(content: string): FrontmatterResult {
   }
 }
 
+/**
+ * Parses Markdown into a document without touching any cache.
+ *
+ * `md diff` needs this: `registerDocument` stores its result under the file's
+ * absolute path and `document()` short-circuits on it, so registering a
+ * historical revision would shadow the worktree file for the rest of the
+ * process — and a diff needs both sides at once. `logicalPath` should be the
+ * real worktree path so the revision's links resolve against the same directory
+ * they always did.
+ */
+export function buildDocument(logicalPath: string, content: string): MarkdownDocument {
+  const tree = parseMarkdown(content);
+  return {
+    path: logicalPath,
+    content,
+    lines: content.split("\n"),
+    tree,
+    headings: extractHeadings(tree),
+    references: extractLinks(tree, content),
+    frontmatter: parseFrontmatter(content),
+  };
+}
+
 /** Whether `target` is `root` or lies beneath it, compared lexically. */
 export function inside(root: string, target: string): boolean {
   const relative = path.relative(root, target);
@@ -97,17 +120,7 @@ export class Workspace {
       this.cache.set(absolute, { fingerprint: current, document: indexed });
       return indexed;
     }
-    const content = fs.readFileSync(absolute, "utf-8");
-    const tree = parseMarkdown(content);
-    const document = {
-      path: absolute,
-      content,
-      lines: content.split("\n"),
-      tree,
-      headings: extractHeadings(tree),
-      references: extractLinks(tree, content),
-      frontmatter: parseFrontmatter(content),
-    };
+    const document = buildDocument(absolute, fs.readFileSync(absolute, "utf-8"));
     this.cache.set(absolute, { fingerprint: current, document });
     this.index.set(absolute, current, document);
     return document;
@@ -121,19 +134,7 @@ export class Workspace {
 
   registerDocument(filePath: string, content: string): string {
     const absolute = path.resolve(filePath);
-    const tree = parseMarkdown(content);
-    this.cache.set(absolute, {
-      transient: true,
-      document: {
-        path: absolute,
-        content,
-        lines: content.split("\n"),
-        tree,
-        headings: extractHeadings(tree),
-        references: extractLinks(tree, content),
-        frontmatter: parseFrontmatter(content),
-      },
-    });
+    this.cache.set(absolute, { transient: true, document: buildDocument(absolute, content) });
     return absolute;
   }
 

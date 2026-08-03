@@ -249,6 +249,22 @@ describe("declared output schemas match real output", () => {
       exitCode: 2,
     },
     {
+      // Revision mode needs a Git repository, which the shared workspace
+      // helper does not build; it is covered in tests/unit/git.test.ts instead.
+      // The payload shape is identical between the two modes.
+      label: "md diff (files)",
+      schema: "md-diff",
+      args: (c) => [
+        "md",
+        "diff",
+        path.join(c.workspace, "clean.md"),
+        path.join(c.workspace, "loner.md"),
+        "-fj",
+      ],
+      outcome: "success",
+      exitCode: 0,
+    },
+    {
       label: "md context",
       schema: "md-context",
       args: (c) => ["md", "context", path.join(c.workspace, "index.md"), "--depth", "1", "-fj"],
