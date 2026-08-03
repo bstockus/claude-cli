@@ -20,7 +20,9 @@ There are two toolsets, `md` and `agent`, plus the top-level `check-update`, `de
 `schema`. Adding a subcommand means: a `src/commands/<name>.ts` exporting an action, a
 `command(...)` registration in `src/cli.ts`, a `src/contract/registry.ts` entry, a
 `docs/commands/<name>.md` page with entries in `docs/commands.md` and `docs/_contents.md`, a
-README entry, and e2e coverage.
+README entry, and e2e coverage. For an `agent` subcommand, also widen
+`AgentResult["command"]` in `src/agent/types.ts` and the `command` enum plus `commands` list
+in `src/contract/schemas/agent.ts`.
 
 ## Conventions
 
@@ -98,6 +100,31 @@ README entry, and e2e coverage.
   surface and the target-profile structure, not the package. Do not bump them for a normal
   release; semantic-release does not touch them. Payload-level breaking changes are versioned by
   the major in the schema `$id` path instead. The rules are in `docs/contract.md`.
+- **The bundle `schemaVersion` is a third hand-owned version.** It versions the _source_ format
+  authors write (`src/agent/manifest.ts`), separate from `CONTRACT_VERSION` and
+  `PROFILE_SCHEMA_VERSION`. Schema 2 is a strict superset of 1: it adds `marketplace:` and
+  `native:` and changes nothing else, which is why `agent upgrade` can verify byte-identical
+  rendering before and after and refuse (AB224) if that ever stops holding.
+- **Native overlay paths are deliberately undeclared.** `TargetProfile.outputs` describes what
+  the _renderer_ emits; an overlay is user-supplied content whose whole purpose is a surface the
+  portable profile does not describe. `agent doctor` and the conformance suite skip artifacts
+  with `origin === "native"` and report them under `doctor.overlays`. Do not "fix" this by adding
+  a `**` output pattern — that would disable the check for portable output too.
+- **`Artifact.origin` is emitted only when `"native"`.** Always emitting it would change
+  `conversion-report.json` and `agent convert -fj` bytes for every bundle that has no overlay.
+- **`hasFindings` fails on any `approximate` diagnostic.** That is right for `convert` and
+  `validate` and wrong for `doctor`, `import`, `upgrade`, and `package`, where approximation is
+  the expected outcome rather than a defect. Those four call `outputDecidedResult` with their own
+  error/strict rule. A new command that reports approximations should do the same.
+- **Sort generated output by byte comparison, never `localeCompare`.** It is ICU-build and
+  locale dependent, so a differently configured CI runner would reorder archives and manifests.
+  `render.ts:897` still uses `localeCompare`; leave it (changing it would move
+  `conversion-report.json` artifact order, which is observable) but do not copy it.
+- **`agent add` must not rewrite `agent-bundle.yaml` unless there is a real edit.**
+  `parseDocument` preserves comments but normalizes incidental whitespace, so an unconditional
+  round trip would churn the file. A plain `parse` + `stringify` would delete every comment.
+- **`agent doctor --output` takes a conversion root, not a package root.** A package root also
+  holds catalogs, checksums, and the inventory, which `diffOutput` would report as unmanaged.
 - **No published schema may set `additionalProperties: false` or `$ref` another document.**
   The first would make every additive change break validating consumers; the second would make
   `claude-cli schema <id>` return something that cannot be compiled on its own.

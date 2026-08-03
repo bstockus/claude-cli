@@ -75,6 +75,39 @@ export const codexProfile: TargetProfile = {
     approximateActivation: ["files"],
     form: "aggregated-agents-md",
   },
+  marketplace: {
+    catalog: {
+      repo: { directory: ".codex-plugin", file: "marketplace.json" },
+      local: { directory: ".codex-plugin", file: "marketplace.json" },
+    },
+    entriesKey: "plugins",
+    entryFields: [
+      { name: "name", required: true, source: { from: "manifest", field: "name" } },
+      { name: "version", required: true, source: { from: "manifest", field: "version" } },
+      { name: "description", required: true, source: { from: "manifest", field: "description" } },
+      { name: "source", required: true, source: { from: "computed", value: "source" } },
+      {
+        name: "displayName",
+        required: true,
+        source: { from: "marketplace", field: "displayName" },
+      },
+      { name: "publisher", required: true, source: { from: "marketplace", field: "publisher" } },
+      { name: "categories", required: true, source: { from: "marketplace", field: "categories" } },
+      { name: "icon", required: true, source: { from: "marketplace", field: "icon" } },
+      {
+        name: "starterPrompts",
+        required: false,
+        source: { from: "marketplace", field: "starterPrompts" },
+      },
+      { name: "homepage", required: false, source: { from: "marketplace", field: "homepage" } },
+      { name: "license", required: true, source: { from: "marketplace", field: "license" } },
+    ],
+    assets: [
+      { role: "icon", required: true, extensions: [".png", ".svg"], maxBytes: 1048576 },
+      { role: "screenshot", required: false, extensions: [".png", ".jpg"], maxBytes: 4194304 },
+    ],
+    archiveName: "{name}-{version}-{target}-{profile}.tar.gz",
+  },
   outputs: {
     plugin: [
       { feature: "manifest", pattern: ".codex-plugin/plugin.json" },

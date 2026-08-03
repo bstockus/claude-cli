@@ -1,6 +1,7 @@
 import type { BundleMarketplace } from "./manifest.js";
 import type { UpgradeReport } from "./upgrade.js";
 import type { ImportReport } from "./import/normalize.js";
+import type { PackageReport } from "./package/index.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -163,7 +164,8 @@ export interface AgentResult {
     | "init"
     | "add"
     | "upgrade"
-    | "import";
+    | "import"
+    | "package";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -182,6 +184,8 @@ export interface AgentResult {
   upgrade?: UpgradeReport;
   /** Provenance report, emitted by `agent import`. */
   import?: ImportReport;
+  /** Packaging result, emitted by `agent package`. */
+  package?: PackageReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

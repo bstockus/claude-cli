@@ -163,6 +163,45 @@ export interface RuleProfile {
   form: "mdc" | "markdown" | "aggregated-agents-md" | null;
 }
 
+/** Where a catalog entry's value comes from. */
+export type MarketplaceFieldSource =
+  | { from: "manifest"; field: string }
+  | { from: "marketplace"; field: string }
+  | { from: "computed"; value: "source" };
+
+export interface MarketplaceEntryField {
+  name: string;
+  required: boolean;
+  source: MarketplaceFieldSource;
+}
+
+export interface MarketplaceAssetRule {
+  role: "icon" | "screenshot";
+  required: boolean;
+  extensions: string[];
+  maxBytes: number | null;
+}
+
+/**
+ * How a target's marketplace catalog is shaped.
+ *
+ * Catalog structure is tabular target behavior, so it belongs here rather than
+ * in the packager — the same rule that keeps paths and hook events out of the
+ * renderer. Optional on {@link TargetProfile} so adding it stays additive:
+ * every shipped profile defines it, but a consumer that has not been updated
+ * simply sees a new key rather than a changed shape.
+ */
+export interface MarketplaceProfile {
+  /** Catalog location per distribution mode; `null` when the mode is unsupported. */
+  catalog: Record<"repo" | "local", { directory: string; file: string } | null>;
+  /** Top-level array key inside the catalog document. */
+  entriesKey: string;
+  entryFields: MarketplaceEntryField[];
+  assets: MarketplaceAssetRule[];
+  /** `{name}`, `{version}`, `{target}`, and `{profile}` are substituted. */
+  archiveName: string;
+}
+
 export interface TargetProfile {
   schemaVersion: string;
   id: AgentTarget;
@@ -178,6 +217,8 @@ export interface TargetProfile {
   rules: RuleProfile;
   outputs: Record<AgentProfile, OutputPattern[]>;
   features: Record<FeatureKey, FeatureProfile>;
+  /** Catalog shape for `agent package`. Optional so adding it stayed additive. */
+  marketplace?: MarketplaceProfile;
 }
 
 function segmentToSource(segment: string): string {

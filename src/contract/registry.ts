@@ -180,6 +180,17 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "Rewrites only agent-bundle.yaml. --to-schema is required rather than defaulting to the newest, so a CI result does not depend on the installed CLI version. Human-judgment notices (AB221) do not fail the command.",
   }),
+  agentCommand("package", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Package written, or checks passed"),
+      USAGE,
+      FINDINGS("Publish-readiness, integrity, or stale finding"),
+    ],
+    notes:
+      "Renders the bundle itself rather than trusting an existing tree; --from-dist only verifies one. Never contacts the network and never publishes. The package root is not an agent convert output root, so agent doctor --output must not be pointed at it.",
+  }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],
     stream: { success: "stdout" },

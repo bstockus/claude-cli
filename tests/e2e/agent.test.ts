@@ -55,6 +55,7 @@ describe("agent CLI", () => {
       "add",
       "upgrade",
       "import",
+      "package",
     ])
       expect(result.stdout).toContain(command);
   });
@@ -640,5 +641,172 @@ describe("agent import", () => {
       "-fj",
     );
     expect(result.exitCode).toBe(1);
+  });
+});
+
+describe("agent package", () => {
+  function scaffolded(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-package-e2e-"));
+    temporary.push(root);
+    const bundle = path.join(root, "rh");
+    fs.mkdirSync(bundle, { recursive: true });
+    fs.writeFileSync(
+      path.join(bundle, "agent-bundle.yaml"),
+      [
+        "schemaVersion: '2'",
+        "name: rh",
+        "version: 1.0.0",
+        "description: A release helper",
+        "marketplace:",
+        "  displayName: Release Helper",
+        "  categories: [ci]",
+        "  publisher:",
+        "    name: Example",
+        "  license: MIT",
+        "",
+      ].join("\n"),
+    );
+    fs.mkdirSync(path.join(bundle, "skills", "hello"), { recursive: true });
+    fs.writeFileSync(
+      path.join(bundle, "skills", "hello", "SKILL.md"),
+      "---\nname: hello\ndescription: Say hello\n---\n\nSay hello.\n",
+    );
+    return bundle;
+  }
+
+  it("emits catalogs, checksums, an inventory, and archives", async () => {
+    const bundle = scaffolded();
+    const output = path.join(path.dirname(bundle), "pkg");
+    const result = await run(
+      "agent",
+      "package",
+      bundle,
+      "--target",
+      "claude-code",
+      "--output",
+      output,
+      "--archive",
+      "-fj",
+    );
+    expect(result.exitCode, result.stdout).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.package.catalogs).toHaveLength(1);
+    expect(payload.package.archives.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(output, "checksums.sha256"))).toBe(true);
+    expect(fs.existsSync(path.join(output, "sbom.json"))).toBe(true);
+    expect(
+      fs.existsSync(path.join(output, "claude-code/plugin/.claude-plugin/marketplace.json")),
+    ).toBe(true);
+  });
+
+  it("produces byte-identical archives across runs", async () => {
+    const bundle = scaffolded();
+    const a = path.join(path.dirname(bundle), "p1");
+    const b = path.join(path.dirname(bundle), "p2");
+    const args = ["--target", "claude-code", "--archive", "--output"];
+    expect((await run("agent", "package", bundle, ...args, a)).exitCode).toBe(0);
+    expect((await run("agent", "package", bundle, ...args, b)).exitCode).toBe(0);
+
+    const archives = fs.readdirSync(path.join(a, "archives")).sort();
+    expect(archives.length).toBeGreaterThan(0);
+    for (const name of archives)
+      expect(
+        fs
+          .readFileSync(path.join(a, "archives", name))
+          .equals(fs.readFileSync(path.join(b, "archives", name))),
+        name,
+      ).toBe(true);
+  });
+
+  it("writes checksums the system tool accepts", async () => {
+    const bundle = scaffolded();
+    const output = path.join(path.dirname(bundle), "pkg");
+    await run("agent", "package", bundle, "--target", "claude-code", "--output", output);
+    const lines = fs.readFileSync(path.join(output, "checksums.sha256"), "utf8").trim().split("\n");
+    for (const line of lines) {
+      const [digest, file] = line.split("  ");
+      expect(digest).toMatch(/^[0-9a-f]{64}$/);
+      expect(fs.existsSync(path.join(output, file)), file).toBe(true);
+    }
+  });
+
+  it("refuses to package a bundle missing required listing metadata", async () => {
+    // codex requires publisher, categories, icon, and license.
+    const bundle = scaffolded();
+    const output = path.join(path.dirname(bundle), "pkg");
+    const result = await run(
+      "agent",
+      "package",
+      bundle,
+      "--target",
+      "codex",
+      "--output",
+      output,
+      "-fj",
+    );
+    expect(result.exitCode).toBe(2);
+    expect(
+      JSON.parse(result.stdout).diagnostics.map((item: { code: string }) => item.code),
+    ).toContain("AB500");
+    expect(fs.existsSync(output)).toBe(false);
+  });
+
+  it("reports a current package as not stale and a drifted one as stale", async () => {
+    const bundle = scaffolded();
+    const output = path.join(path.dirname(bundle), "pkg");
+    const args = ["--target", "claude-code", "--output", output];
+    await run("agent", "package", bundle, ...args);
+
+    const current = await run("agent", "package", bundle, ...args, "--check", "-fj");
+    expect(current.exitCode).toBe(0);
+    expect(JSON.parse(current.stdout).stale).toBe(false);
+
+    fs.appendFileSync(path.join(output, "claude-code/plugin/skills/hello/SKILL.md"), "drift\n");
+    const drifted = await run("agent", "package", bundle, ...args, "--check", "-fj");
+    expect(drifted.exitCode).toBe(2);
+    expect(JSON.parse(drifted.stdout).stale).toBe(true);
+  });
+
+  it("rejects a --from-dist tree that the bundle did not produce", async () => {
+    const bundle = scaffolded();
+    const dist = path.join(path.dirname(bundle), "dist");
+    await run("agent", "convert", bundle, "--target", "claude-code", "--output", dist);
+    fs.appendFileSync(path.join(dist, "claude-code/plugin/skills/hello/SKILL.md"), "tampered\n");
+
+    const result = await run(
+      "agent",
+      "package",
+      bundle,
+      "--target",
+      "claude-code",
+      "--output",
+      path.join(path.dirname(bundle), "pkg"),
+      "--from-dist",
+      dist,
+      "-fj",
+    );
+    expect(result.exitCode).toBe(2);
+    expect(
+      JSON.parse(result.stdout).diagnostics.map((item: { code: string }) => item.code),
+    ).toContain("AB508");
+  });
+
+  it("writes nothing under --dry-run", async () => {
+    const bundle = scaffolded();
+    const output = path.join(path.dirname(bundle), "pkg");
+    const result = await run(
+      "agent",
+      "package",
+      bundle,
+      "--target",
+      "claude-code",
+      "--output",
+      output,
+      "--dry-run",
+      "-fj",
+    );
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).dryRun).toBe(true);
+    expect(fs.existsSync(output)).toBe(false);
   });
 });

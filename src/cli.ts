@@ -47,6 +47,7 @@ import type { AgentAddOptions } from "./commands/agent-scaffold.js";
 import { agentAddAction, agentInitAction } from "./commands/agent-scaffold.js";
 import { agentUpgradeAction } from "./commands/agent-upgrade.js";
 import { agentImportAction } from "./commands/agent-import.js";
+import { agentPackageAction } from "./commands/agent-package.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -291,6 +292,30 @@ agent
   )
   .action((source: string, opts: Parameters<typeof agentUpgradeAction>[1]) =>
     agentActionBoundary("upgrade", opts, () => agentUpgradeAction(source, opts)),
+  );
+
+agent
+  .command("package")
+  .description("Build a distributable package with catalogs, checksums, and archives")
+  .argument("<source>", "Bundle root")
+  .requiredOption("--target <target>", "Target (repeatable, or all)", collect)
+  .requiredOption("--output <dir>", "Package root")
+  .option("--profile <profile>", "Output profile: plugin, project, both", "both")
+  .option("--marketplace <mode>", "Catalog mode: repo, local, none", "repo")
+  .option("--archive", "Also emit a deterministic .tar.gz per target and profile")
+  .option("--from-dist <dir>", "Verify an existing agent convert tree matches this bundle")
+  .option("--strict", "Treat warnings as blocking findings")
+  .option("--force", "Replace nonempty selected destinations")
+  .option("--dry-run", "Build in memory without writing")
+  .option("--check", "Compare against an existing package without writing")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nRenders the bundle itself, so a package can never certify a stale tree.\nNever contacts the network and never publishes.\n\nExit codes:\n  0  Package written, or checks passed\n  1  Invocation or I/O error\n  2  Publish-readiness, integrity, or stale finding",
+  )
+  .action((source: string, opts: Parameters<typeof agentPackageAction>[1]) =>
+    agentActionBoundary("package", opts, () => agentPackageAction(source, opts)),
   );
 
 agent

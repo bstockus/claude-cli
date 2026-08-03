@@ -46,8 +46,8 @@ required beyond the name, so an agent can run it blind.
 ## Publish-readiness is not init's job
 
 The scaffolded manifest carries a `marketplace:` block with an empty `publisher.name` and no
-categories. That is **valid**: `agent validate` stays clean, and only packaging requires real
-values. Keeping the two questions separate is what lets `agent init` run without human input.
+categories. That is **valid**: `agent validate` stays clean, and only
+[`agent package`](agent-package.md) requires real values. Keeping the two questions separate is what lets `agent init` run without human input.
 
 ## The plan
 

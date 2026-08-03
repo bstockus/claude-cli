@@ -20,6 +20,7 @@ export const agentResultSchema: SchemaEntry = {
     "agent add",
     "agent upgrade",
     "agent import",
+    "agent package",
   ],
   schema: {
     $schema: DRAFT,
@@ -42,6 +43,7 @@ export const agentResultSchema: SchemaEntry = {
           "add",
           "upgrade",
           "import",
+          "package",
         ],
       },
       ok: { type: "boolean" },
@@ -100,6 +102,49 @@ export const agentResultSchema: SchemaEntry = {
             description: "Items needing human judgment, mirrored as AB221 notices.",
             type: "array",
             items: { type: "string" },
+          },
+        },
+      },
+      package: {
+        description: "Packaging result, emitted by `agent package`.",
+        type: "object",
+        required: ["catalogs", "archives", "checksums", "sbom", "checks"],
+        properties: {
+          catalogs: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["target", "profile", "path"],
+              properties: {
+                target: { enum: TARGETS },
+                profile: { enum: PROFILES },
+                path: { type: "string" },
+              },
+            },
+          },
+          archives: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["target", "profile", "path", "sha256", "bytes"],
+              properties: {
+                target: { enum: TARGETS },
+                profile: { enum: PROFILES },
+                path: { type: "string" },
+                sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+                bytes: { type: "integer", minimum: 0 },
+              },
+            },
+          },
+          checksums: { type: "string", description: "Path to the sha256sum-compatible file." },
+          sbom: { type: "string", description: "Path to the file inventory." },
+          checks: {
+            type: "object",
+            required: ["passed", "failed"],
+            properties: {
+              passed: { type: "integer", minimum: 0 },
+              failed: { type: "integer", minimum: 0 },
+            },
           },
         },
       },

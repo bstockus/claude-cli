@@ -75,6 +75,32 @@ export const cursorProfile: TargetProfile = {
     approximateActivation: [],
     form: "mdc",
   },
+  marketplace: {
+    catalog: {
+      repo: { directory: ".cursor-plugin", file: "marketplace.json" },
+      local: { directory: ".cursor-plugin", file: "marketplace.json" },
+    },
+    entriesKey: "plugins",
+    entryFields: [
+      { name: "name", required: true, source: { from: "manifest", field: "name" } },
+      { name: "version", required: true, source: { from: "manifest", field: "version" } },
+      { name: "description", required: true, source: { from: "manifest", field: "description" } },
+      { name: "source", required: true, source: { from: "computed", value: "source" } },
+      {
+        name: "displayName",
+        required: true,
+        source: { from: "marketplace", field: "displayName" },
+      },
+      { name: "author", required: false, source: { from: "marketplace", field: "publisher" } },
+      { name: "categories", required: false, source: { from: "marketplace", field: "categories" } },
+      { name: "icon", required: false, source: { from: "marketplace", field: "icon" } },
+    ],
+    assets: [
+      { role: "icon", required: false, extensions: [".png", ".svg"], maxBytes: 1048576 },
+      { role: "screenshot", required: false, extensions: [".png", ".jpg"], maxBytes: 4194304 },
+    ],
+    archiveName: "{name}-{version}-{target}-{profile}.tar.gz",
+  },
   outputs: {
     plugin: [
       { feature: "manifest", pattern: ".cursor-plugin/plugin.json" },

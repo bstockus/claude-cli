@@ -80,6 +80,27 @@ export const claudeCodeProfile: TargetProfile = {
     approximateActivation: [],
     form: "markdown",
   },
+  marketplace: {
+    catalog: {
+      repo: { directory: ".claude-plugin", file: "marketplace.json" },
+      local: { directory: ".claude-plugin", file: "marketplace.json" },
+    },
+    entriesKey: "plugins",
+    entryFields: [
+      { name: "name", required: true, source: { from: "manifest", field: "name" } },
+      { name: "version", required: true, source: { from: "manifest", field: "version" } },
+      { name: "description", required: true, source: { from: "manifest", field: "description" } },
+      { name: "source", required: true, source: { from: "computed", value: "source" } },
+      { name: "author", required: false, source: { from: "marketplace", field: "publisher" } },
+      { name: "category", required: false, source: { from: "marketplace", field: "categories" } },
+      { name: "license", required: false, source: { from: "marketplace", field: "license" } },
+    ],
+    assets: [
+      { role: "icon", required: false, extensions: [".png", ".svg"], maxBytes: 1048576 },
+      { role: "screenshot", required: false, extensions: [".png", ".jpg"], maxBytes: 4194304 },
+    ],
+    archiveName: "{name}-{version}-{target}-{profile}.tar.gz",
+  },
   outputs: {
     plugin: [
       { feature: "manifest", pattern: ".claude-plugin/plugin.json" },
