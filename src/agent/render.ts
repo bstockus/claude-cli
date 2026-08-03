@@ -9,38 +9,8 @@ import type {
   MarkdownComponent,
 } from "./types.js";
 import { diagnostic } from "./types.js";
-
-const EVENT_NAMES: Record<AgentTarget, Record<string, string>> = {
-  "claude-code": {
-    "session-start": "SessionStart",
-    "pre-tool-use": "PreToolUse",
-    "post-tool-use": "PostToolUse",
-    stop: "Stop",
-  },
-  codex: {
-    "session-start": "SessionStart",
-    "pre-tool-use": "PreToolUse",
-    "post-tool-use": "PostToolUse",
-    stop: "Stop",
-  },
-  cursor: {
-    "session-start": "sessionStart",
-    "pre-tool-use": "preToolUse",
-    "post-tool-use": "postToolUse",
-    stop: "stop",
-  },
-};
-
-const LEGACY_EVENTS: Record<string, string> = {
-  SessionStart: "session-start",
-  sessionStart: "session-start",
-  PreToolUse: "pre-tool-use",
-  preToolUse: "pre-tool-use",
-  PostToolUse: "post-tool-use",
-  postToolUse: "post-tool-use",
-  Stop: "stop",
-  stop: "stop",
-};
+import type { ModelClass } from "./targets/index.js";
+import { HOOK_EVENT_ALIASES, nativeHookEvent, profileFor } from "./targets/index.js";
 
 function json(value: unknown): Buffer {
   return Buffer.from(JSON.stringify(value, null, 2) + "\n");
@@ -97,16 +67,10 @@ function rewritePlaceholders(
   component?: MarkdownComponent,
   profile: AgentProfile = "plugin",
 ): string {
+  const targetProfile = profileFor(target);
   const hadArguments = /\$ARGUMENTS|\$\{ARGUMENTS\}|\{\{arguments\}\}/.test(content);
   content = content.replace(/\$\{ARGUMENTS\}|\{\{arguments\}\}/g, "$ARGUMENTS");
-  const nativeRoot =
-    target === "claude-code"
-      ? profile === "plugin"
-        ? "${CLAUDE_PLUGIN_ROOT}"
-        : "${CLAUDE_PROJECT_DIR}"
-      : target === "codex" && profile === "plugin"
-        ? "${PLUGIN_ROOT}"
-        : ".";
+  const nativeRoot = targetProfile.placeholders.bundleRoot[profile];
   content = content.replace(/\$\{BUNDLE_ROOT\}|\{\{bundleRoot\}\}/g, nativeRoot);
   content = content.replace(/\$\{SKILL_DIR\}|\{\{skillDir\}\}/g, "${CLAUDE_SKILL_DIR}");
   if (target === "claude-code")
@@ -127,7 +91,7 @@ function rewritePlaceholders(
   if (
     hadArguments &&
     kind === "skill" &&
-    target === "cursor" &&
+    targetProfile.placeholders.arguments === "advisory" &&
     !content.includes("If the above shows literal `$ARGUMENTS`")
   ) {
     const lines = content.split("\n");
@@ -143,7 +107,7 @@ function rewritePlaceholders(
       );
     content = lines.join("\n");
   }
-  if (hadArguments && target === "codex") {
+  if (hadArguments && targetProfile.placeholders.arguments === "prose") {
     content = content.replace(/\$ARGUMENTS/g, "the invocation arguments from the user's message");
     diagnostics.push(
       diagnostic(
@@ -265,8 +229,8 @@ function transformedHooks(
   const source = { ...base, ...overrideEvents };
   const hooks: Record<string, unknown> = {};
   for (const [rawEvent, handlers] of Object.entries(source)) {
-    const neutral = LEGACY_EVENTS[rawEvent] ?? rawEvent;
-    const targetName = EVENT_NAMES[target][neutral];
+    const neutral = HOOK_EVENT_ALIASES[rawEvent] ?? rawEvent;
+    const targetName = nativeHookEvent(target, neutral);
     if (!targetName) {
       const manifestOverrides = bundle.manifest.targets as Record<string, unknown> | undefined;
       const hasOverride = Boolean(manifestOverrides?.[target]) || Object.keys(override).length > 0;
@@ -334,7 +298,7 @@ function transformedHooks(
               },
             ),
           );
-        if (target === "cursor")
+        if (profileFor(target).hooks.handlerShape === "flat")
           return Object.fromEntries(
             Object.entries(handler).filter(
               ([key]) =>
@@ -363,11 +327,14 @@ function transformedHooks(
     };
     hooks[targetName] = rewrite(normalizeHandlers(handlers));
   }
-  return target === "cursor" && !bundle.legacy ? { version: 1, hooks } : { hooks };
+  return profileFor(target).hooks.envelope === "versioned" && !bundle.legacy
+    ? { version: 1, hooks }
+    : { hooks };
 }
 
 function manifest(bundle: AgentBundle, target: AgentTarget): Record<string, unknown> {
-  if (bundle.legacy && target !== "codex") return { ...bundle.manifest };
+  const pluginAgentRoot = profileFor(target).paths.plugin.agents;
+  if (bundle.legacy && pluginAgentRoot !== null) return { ...bundle.manifest };
   const result: Record<string, unknown> = {
     name: bundle.name,
     version: bundle.version,
@@ -376,7 +343,7 @@ function manifest(bundle: AgentBundle, target: AgentTarget): Record<string, unkn
   };
   if (bundle.hooks) result.hooks = "./hooks/hooks.json";
   if (bundle.mcp) result.mcpServers = "./.mcp.json";
-  if (target !== "codex" && bundle.agents.length) result.agents = "./agents/";
+  if (pluginAgentRoot !== null && bundle.agents.length) result.agents = `./${pluginAgentRoot}/`;
   return result;
 }
 
@@ -388,7 +355,7 @@ function mapModel(
 ): string | undefined {
   if (value === undefined) return undefined;
   const model = String(value);
-  const semantic: Record<string, string> = {
+  const semantic: Record<string, ModelClass> = {
     fast: "fast",
     balanced: "balanced",
     capable: "capable",
@@ -397,7 +364,7 @@ function mapModel(
     sonnet: "balanced",
     opus: "capable",
   };
-  const level = semantic[model];
+  const level: ModelClass | undefined = semantic[model];
   if (!level) {
     diagnostics.push(
       diagnostic(
@@ -414,10 +381,7 @@ function mapModel(
     );
     return "inherit";
   }
-  if (target === "claude-code")
-    return { fast: "haiku", balanced: "sonnet", capable: "opus", inherit: "inherit" }[level];
-  if (target === "cursor") return level === "fast" ? "fast" : "inherit";
-  return undefined;
+  return profileFor(target).models.classes[level] ?? undefined;
 }
 
 function mapTools(
@@ -428,17 +392,13 @@ function mapTools(
   legacy: boolean,
 ): void {
   if (!Array.isArray(metadata.tools)) return;
-  if (legacy && target !== "codex") return;
+  const targetProfile = profileFor(target);
+  if (legacy && targetProfile.paths.plugin.agents !== null) return;
   const explicit = Object.prototype.hasOwnProperty.call(targetOverride(component, target), "tools");
   if (explicit) return;
   const capabilities = metadata.tools.map(String);
-  if (target === "claude-code") {
-    const mapping: Record<string, string[]> = {
-      read: ["Read", "Glob", "Grep"],
-      write: ["Write", "Edit"],
-      shell: ["Bash"],
-      web: ["WebFetch", "WebSearch"],
-    };
+  const mapping = targetProfile.tools.capabilities as Record<string, string[]> | null;
+  if (mapping) {
     const unsupported = capabilities.filter((value) => !mapping[value]);
     metadata.tools = [...new Set(capabilities.flatMap((value) => mapping[value] ?? []))];
     if (unsupported.length)
@@ -482,17 +442,14 @@ function renderSkill(
   artifacts: Artifact[],
 ): void {
   if (!selected(component, target)) return;
+  const targetProfile = profileFor(target);
   const directory =
-    target === "cursor" && profile === "plugin"
+    targetProfile.paths.namespacePluginSkills && profile === "plugin"
       ? `${bundle.name}-${component.name}`
       : component.name;
-  const projectSkillRoots: Record<AgentTarget, string> = {
-    "claude-code": ".claude/skills",
-    codex: ".agents/skills",
-    cursor: ".cursor/skills",
-  };
-  const base =
-    profile === "project" ? `${projectSkillRoots[target]}/${directory}` : `skills/${directory}`;
+  const skillRoot =
+    profile === "project" ? targetProfile.paths.project.skills : targetProfile.paths.plugin.skills;
+  const base = `${skillRoot}/${directory}`;
   const invocation = String(
     component.metadata.invocationPolicy ?? component.metadata.invocation ?? "auto",
   );
@@ -525,7 +482,7 @@ function renderSkill(
       );
   }
   const argumentHint = component.metadata.argumentHint ?? component.metadata.arguments;
-  if (argumentHint !== undefined && target !== "codex")
+  if (argumentHint !== undefined && targetProfile.placeholders.arguments !== "prose")
     renderedComponent = {
       ...renderedComponent,
       metadata: {
@@ -562,19 +519,20 @@ function renderAgent(
     component,
     diagnostics,
   );
+  const targetProfile = profileFor(target);
+  if (!targetProfile.features.agents.profiles.includes(profile)) {
+    diagnostics.push(
+      diagnostic("AB340", `${target} custom agents are project-only`, "unsupported", {
+        component: component.name,
+        path: component.path,
+        target,
+        profile,
+        remediation: "Generate the project profile as well.",
+      }),
+    );
+    return;
+  }
   if (target === "codex") {
-    if (profile === "plugin") {
-      diagnostics.push(
-        diagnostic("AB340", "Codex custom agents are project-only", "unsupported", {
-          component: component.name,
-          path: component.path,
-          target,
-          profile,
-          remediation: "Generate the project profile as well.",
-        }),
-      );
-      return;
-    }
     const lines = [
       `name = ${JSON.stringify(component.name)}`,
       `description = ${JSON.stringify(component.description)}`,
@@ -614,11 +572,7 @@ function renderAgent(
     };
   }
   const agentRoot =
-    profile === "project"
-      ? target === "claude-code"
-        ? ".claude/agents"
-        : ".cursor/agents"
-      : "agents";
+    profile === "project" ? targetProfile.paths.project.agents : targetProfile.paths.plugin.agents;
   artifacts.push({
     path: `${agentRoot}/${component.name}.md`,
     content: Buffer.from(
@@ -645,9 +599,10 @@ function renderRules(
   diagnostics: AgentDiagnostic[],
   artifacts: Artifact[],
 ): void {
+  const targetProfile = profileFor(target);
   for (const rule of bundle.rules) {
     if (!selected(rule, target)) continue;
-    if (profile === "plugin" && (target === "codex" || target === "claude-code")) {
+    if (!targetProfile.features.rules.profiles.includes(profile)) {
       diagnostics.push(
         diagnostic("AB350", `${target} instruction rules are project-only`, "unsupported", {
           component: rule.name,
@@ -667,18 +622,14 @@ function renderRules(
       rule,
       profile,
     );
-    const exactActivation =
-      target === "cursor"
-        ? ["always", "files"]
-        : target === "claude-code"
-          ? ["always", "files"]
-          : ["always"];
-    if (!exactActivation.includes(rule.activation))
+    if (!targetProfile.rules.exactActivation.includes(rule.activation))
       diagnostics.push(
         diagnostic(
           "AB351",
           `Rule activation '${rule.activation}' is not exact on ${target}`,
-          rule.activation === "files" && target === "codex" ? "approximate" : "unsupported",
+          targetProfile.rules.approximateActivation.includes(rule.activation)
+            ? "approximate"
+            : "unsupported",
           {
             component: rule.name,
             path: rule.path,
@@ -688,27 +639,32 @@ function renderRules(
           },
         ),
       );
-    if (target === "cursor") {
+    const ruleRoot = targetProfile.paths.project.rules;
+    if (targetProfile.rules.form === "mdc") {
       const metadata: Record<string, unknown> = {
         description: rule.description,
         alwaysApply: rule.activation === "always",
       };
       if (rule.globs.length) metadata.globs = rule.globs.join(",");
       artifacts.push({
-        path: `.cursor/rules/${rule.name}.mdc`,
+        path: `${ruleRoot}/${rule.name}.mdc`,
         content: Buffer.from(yamlFrontmatter(metadata, body)),
         mode: 0o644,
       });
-    } else if (target === "claude-code") {
+    } else if (targetProfile.rules.form === "markdown") {
       const metadata = rule.globs.length ? { paths: rule.globs } : {};
       artifacts.push({
-        path: `.claude/rules/${rule.name}.md`,
+        path: `${ruleRoot}/${rule.name}.md`,
         content: Buffer.from(yamlFrontmatter(metadata, body)),
         mode: 0o644,
       });
     }
   }
-  if (target === "codex" && profile === "project" && bundle.rules.length) {
+  if (
+    targetProfile.rules.form === "aggregated-agents-md" &&
+    profile === "project" &&
+    bundle.rules.length
+  ) {
     const content = bundle.rules
       .filter((rule) => selected(rule, target))
       .map(
@@ -716,7 +672,11 @@ function renderRules(
           `## ${rule.name}\n\n${rewritePlaceholders(processTargetBlocks(rule.body, target), target, "other", diagnostics, rule, profile).trim()}`,
       )
       .join("\n\n");
-    artifacts.push({ path: "AGENTS.md", content: Buffer.from(content + "\n"), mode: 0o644 });
+    artifacts.push({
+      path: String(targetProfile.paths.project.rules),
+      content: Buffer.from(content + "\n"),
+      mode: 0o644,
+    });
   }
 }
 
@@ -847,14 +807,9 @@ export function renderBundle(
       const prefix = `${target}/${profile}`;
       const local: Artifact[] = [];
       if (profile === "plugin") {
-        const manifestDir =
-          target === "claude-code"
-            ? ".claude-plugin"
-            : target === "codex"
-              ? ".codex-plugin"
-              : ".cursor-plugin";
+        const { directory: manifestDir, file: manifestFile } = profileFor(target).manifest;
         local.push({
-          path: `${manifestDir}/plugin.json`,
+          path: `${manifestDir}/${manifestFile}`,
           content: json(manifest(bundle, target)),
           mode: 0o644,
         });
