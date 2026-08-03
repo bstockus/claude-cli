@@ -5,8 +5,14 @@ This directory is the reference documentation for `claude-cli`.
 ## Reference
 
 - [Complete command listing](commands.md)
+- [Machine-readable result contract](contract.md)
 - [Project configuration schema](configuration.md)
 - [Shared Markdown command behavior](commands/md-common.md)
+
+## Contract commands
+
+- [`describe`](commands/describe.md)
+- [`schema`](commands/schema.md)
 
 ## Agent commands
 

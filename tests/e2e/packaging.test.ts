@@ -51,6 +51,19 @@ describe("published package contents", () => {
     expect(packedFiles).toContain(".markdownlintrc");
   });
 
+  // The published schemas and target profiles are TypeScript modules under src/ rather
+  // than data directories, precisely so they compile into dist and ship via the existing
+  // files entry. A top-level schemas/ or .json profile would be omitted with no error at
+  // all — `schema <id>` would report every id as unknown, and `agent specs` would crash.
+  it("ships the contract schemas and target profiles", () => {
+    expect(packedFiles).toContain("dist/contract/registry.js");
+    expect(packedFiles).toContain("dist/contract/schemas/index.js");
+    expect(packedFiles).toContain("dist/agent/targets/index.js");
+    expect(packedFiles).toContain("dist/commands/describe.js");
+    expect(packedFiles).toContain("dist/commands/schema.js");
+    expect(packedFiles).toContain("dist/commands/agent-doctor.js");
+  });
+
   it("ships the docs but not the sources or tests", () => {
     expect(packedFiles).toContain("README.md");
     expect(packedFiles).toContain("LICENSE");

@@ -5,17 +5,22 @@ A TypeScript/Node ESM CLI published as `@bstockus/claude-cli`. The binary is `cl
 ## Layout
 
 ```
-src/cli.ts          commander entry point; every subcommand is registered here
-src/commands/*.ts   one file per `md` subcommand, each exporting a `<name>Action`
-src/checkers/*.ts   katex, mermaid, references, markdown-lint
-src/markdown-ast.ts shared unified/remark parsing + extraction helpers
-src/formatters.ts   llm / human / json output rendering
+src/cli.ts             commander entry point; every subcommand is registered here
+src/commands/*.ts      one file per subcommand, each exporting a `<name>Action`
+src/checkers/*.ts      katex, mermaid, references, markdown-lint
+src/markdown-ast.ts    shared unified/remark parsing + extraction helpers
+src/formatters.ts      llm / human / json output rendering
+src/result.ts          the single `--format json` write path, and `--envelope`
+src/agent/targets/*.ts versioned per-target capability profiles
+src/contract/*.ts      published JSON Schemas + the per-command contract registry
 tests/{unit,integration,e2e}
 ```
 
-There is one toolset, `md`. Adding a subcommand means: a `src/commands/<name>.ts`
-exporting an action, a `md.command(...)` registration in `src/cli.ts`, a README entry, and
-e2e coverage in `tests/e2e/cli.test.ts`.
+There are two toolsets, `md` and `agent`, plus the top-level `check-update`, `describe`, and
+`schema`. Adding a subcommand means: a `src/commands/<name>.ts` exporting an action, a
+`command(...)` registration in `src/cli.ts`, a `src/contract/registry.ts` entry, a
+`docs/commands/<name>.md` page with entries in `docs/commands.md` and `docs/_contents.md`, a
+README entry, and e2e coverage.
 
 ## Conventions
 
@@ -24,7 +29,11 @@ e2e coverage in `tests/e2e/cli.test.ts`.
 - Output format is always selectable via `--format llm|human|json` (default `llm`), with
   `-fh`/`-fj` shorthands expanded in `src/cli.ts` before commander parses argv.
 - Exit codes: `0` success, `1` usage error, `2` actionable issues found.
-- `md rename-heading` is the only command that writes to files.
+- `md rename-heading`, `md rename-file`, `md toc --write`, and `agent convert` are the
+  commands that write to files.
+- Every `--format json` payload goes through `jsonPayload` in `src/result.ts`, which is what
+  makes `--envelope` reach all of them. Writing `JSON.stringify` inline at a new site silently
+  opts that command out.
 
 ## Gotchas
 
@@ -68,6 +77,31 @@ e2e coverage in `tests/e2e/cli.test.ts`.
   intentional patterns here — uniformly-`async` commander handlers, `as unknown as` casts
   around jsdom globals, and `any` at the `JSON.parse`/YAML boundary. Adopting it means
   fixing those first, not just flipping the preset.
+- **Target behavior is data, and the renderer reads that data.** `src/agent/targets/*.ts` holds
+  the hook events, path roots, manifest directories, model and tool maps, rule activations, and
+  declared output patterns; `src/agent/render.ts` looks them up rather than branching on the
+  target. Do not reintroduce an `if (target === …)` for anything tabular — the conformance
+  fixtures assert that every emitted path is one the profile declares, so an undeclared
+  hardcoded path fails the build.
+- **Every visible command needs a `src/contract/registry.ts` entry.** `describe` merges the
+  registry into the walked command tree, and `tests/e2e/contract.test.ts` fails on any command
+  reported as `stability: "undeclared"` and on any registry id that no longer maps to a command.
+  The registry records current behavior, including the known inconsistencies (`md links -fj`
+  never exiting 2, `md lint-dir --summary`'s divergent shape) — those are documented in
+  `notes`, not quietly fixed, because changing them is breaking.
+- **Schemas and target profiles are TypeScript modules, not data directories.** `tsconfig` sets
+  `rootDir: "src"` with no `resolveJsonModule`, so a top-level `schemas/` or `.json` profile
+  would never reach `dist` and the published package would silently lack it — the same trap as
+  `.markdownlintrc`, but with no error at all. Moving them means adding the directory to
+  `package.json` `files` **and** to `tests/e2e/packaging.test.ts`.
+- **`CONTRACT_VERSION` and `PROFILE_SCHEMA_VERSION` are hand-owned.** They version the contract
+  surface and the target-profile structure, not the package. Do not bump them for a normal
+  release; semantic-release does not touch them. Payload-level breaking changes are versioned by
+  the major in the schema `$id` path instead. The rules are in `docs/contract.md`.
+- **No published schema may set `additionalProperties: false` or `$ref` another document.**
+  The first would make every additive change break validating consumers; the second would make
+  `claude-cli schema <id>` return something that cannot be compiled on its own.
+  `tests/unit/contract-schemas.test.ts` enforces both.
 
 ## Commits
 

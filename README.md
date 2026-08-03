@@ -224,6 +224,30 @@ Directory commands use the configured include/exclude globs consistently. `.git`
 - `1` - Usage error (file not found, heading not found, etc.)
 - `2` - Actionable issues found (broken links, orphans, etc.)
 
+### Machine-readable output
+
+JSON output is a documented API, not something to reverse-engineer. `describe` reports every
+command with its options, exit code meanings, output stream, and output schema id; `schema`
+retrieves the schemas themselves.
+
+```bash
+claude-cli describe --format json           # the whole contract
+claude-cli describe md graph --format json  # one command
+claude-cli schema                           # published schemas
+claude-cli schema md-graph                  # one schema document
+```
+
+Existing payloads are unchanged. Pass `--envelope` alongside `--format json` for a uniform
+wrapper carrying the command id, exit code, and schema id, with the payload verbatim under
+`data`:
+
+```bash
+claude-cli md graph docs --format json --envelope
+```
+
+See [docs/contract.md](docs/contract.md) for the versioning rules, the stream guarantees, and
+what does and does not count as a breaking change.
+
 ## Commands
 
 ### Agent bundle conversion

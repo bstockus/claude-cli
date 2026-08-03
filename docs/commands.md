@@ -1,17 +1,19 @@
 # Complete command listing
 
-`claude-cli` contains two toolsets plus a direct update command. Angle brackets in usage
+`claude-cli` contains two toolsets plus update and contract commands. Angle brackets in usage
 signatures are required arguments; square brackets are optional arguments.
 
 ## Global interface
 
-| Command                   | Description                                                         |
-| ------------------------- | ------------------------------------------------------------------- |
-| `claude-cli --help`       | Show top-level help.                                                |
-| `claude-cli --version`    | Print the installed version.                                        |
-| `claude-cli check-update` | Query the configured npm registry for the latest published version. |
-| `claude-cli agent`        | Convert, validate, and inspect portable agent bundles.              |
-| `claude-cli md`           | Validate, query, analyze, and modify Markdown workspaces.           |
+| Command                   | Description                                                            |
+| ------------------------- | ---------------------------------------------------------------------- |
+| `claude-cli --help`       | Show top-level help.                                                   |
+| `claude-cli --version`    | Print the installed version.                                           |
+| `claude-cli check-update` | Query the configured npm registry for the latest published version.    |
+| `claude-cli describe`     | Describe the CLI contract: commands, options, exit codes, and schemas. |
+| `claude-cli schema`       | Print a published output schema, or list the available schemas.        |
+| `claude-cli agent`        | Convert, validate, and inspect portable agent bundles.                 |
+| `claude-cli md`           | Validate, query, analyze, and modify Markdown workspaces.              |
 
 ## Agent commands
 
