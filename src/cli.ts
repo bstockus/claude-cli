@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { lintAction } from "./commands/lint.js";
@@ -33,6 +32,9 @@ import { loadConfig, selectConfig, defaultLintConcurrency } from "./config.js";
 import type { ResolvedConfig } from "./config.js";
 import { commandOptions, initializeRuntime, runtime } from "./runtime.js";
 import { CommandExit } from "./command-result.js";
+import { collect } from "./option-utils.js";
+import { formatsFor } from "./formats.js";
+import { packageName, packageVersion as version } from "./version.js";
 import {
   agentCompatAction,
   agentConvertAction,
@@ -40,14 +42,6 @@ import {
   agentValidateAction,
   agentActionBoundary,
 } from "./commands/agent.js";
-
-// Read the version at runtime rather than inlining it: semantic-release rewrites
-// package.json at release time, so a literal here would always be stale.
-// From dist/cli.js, "../package.json" is the package root — always present in the tarball.
-const { version, name: packageName } = createRequire(import.meta.url)("../package.json") as {
-  version: string;
-  name: string;
-};
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -195,11 +189,7 @@ const md = program
   );
 
 function common(command: Command): Command {
-  const formats = ["lint", "lint-dir", "audit", "validate-frontmatter", "check-urls"].includes(
-    command.name(),
-  )
-    ? "llm, human, json, jsonl, sarif"
-    : "llm, human, json";
+  const formats = formatsFor(command.name()).join(", ");
   return command
     .option("--format <fmt>", `Output format: ${formats}`)
     .option("--paths <style>", "Path display: absolute, relative")
@@ -653,11 +643,6 @@ common(md.command("check-urls"))
       ) as never,
     ),
   );
-
-function collect(val: string, acc: string[] = []): string[] {
-  acc.push(val);
-  return acc;
-}
 
 common(md.command("orphans"))
   .description("Find markdown files not referenced by any other markdown file")

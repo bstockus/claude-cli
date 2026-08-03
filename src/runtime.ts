@@ -1,6 +1,7 @@
 import type { ResolvedConfig } from "./config.js";
 import { loadConfig, resolveCommandOptions, type PathStyle } from "./config.js";
 import { Workspace } from "./workspace.js";
+import { ALL_FORMATS, supportsDiagnosticFormats } from "./formats.js";
 import type { OutputFormat } from "./types.js";
 
 export interface Runtime {
@@ -54,12 +55,12 @@ export function commandOptions<T extends Record<string, unknown>>(
     }),
   );
   const resolved = resolveCommandOptions(runtime().config, command, builtins, explicit);
-  if (!["llm", "human", "json", "jsonl", "sarif"].includes(String(resolved.format))) {
+  if (!ALL_FORMATS.includes(resolved.format)) {
     throw new Error(`Invalid output format: ${String(resolved.format)}`);
   }
   if (
     (resolved.format === "jsonl" || resolved.format === "sarif") &&
-    !["lint", "lint-dir", "audit", "validate-frontmatter", "check-urls"].includes(command)
+    !supportsDiagnosticFormats(command)
   ) {
     throw new Error(`${resolved.format} output is not supported by md ${command}`);
   }
