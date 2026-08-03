@@ -11,6 +11,16 @@ import type {
   Artifact,
 } from "../agent/types.js";
 import { TARGETS } from "../agent/types.js";
+import type { SpecsPayload } from "../agent/targets/index.js";
+import {
+  FEATURE_KEYS,
+  PROFILE_SCHEMA_VERSION,
+  TARGET_PROFILES,
+  compatibilityMatrix,
+} from "../agent/targets/index.js";
+import type { ConversionProvenance } from "../agent/output.js";
+import { CONVERSION_REPORT, diffOutput, outputMatches } from "../agent/output.js";
+import { packageName, packageVersion } from "../version.js";
 
 export interface AgentOptions {
   target?: string[];
@@ -66,10 +76,38 @@ export function resolveTargets(values: string[] | undefined, required = false): 
   return [...new Set(expanded)] as AgentTarget[];
 }
 
-function profiles(value: string | undefined): AgentProfile[] {
+export function profiles(value: string | undefined): AgentProfile[] {
   if (!value || value === "both") return ["plugin", "project"];
   if (value === "plugin" || value === "project") return [value];
   throw new Error(`Unknown profile: ${value}`);
+}
+
+/**
+ * Renders the profiles as a readable digest. The full structure is reserved for
+ * `--format json`, which is the form a consumer should depend on.
+ */
+function formatSpecs(specs: SpecsPayload): string[] {
+  const lines = [`profile schema version: ${specs.schemaVersion}`];
+  for (const [id, profile] of Object.entries(specs.targets)) {
+    lines.push(
+      "",
+      `${id} (${profile.host.displayName})`,
+      `  documentation revision: ${profile.host.documentationRevision}`,
+      `  verified host range: ${profile.host.minimumVersion ?? "unrecorded"} .. ${profile.host.verifiedThrough ?? "unrecorded"}`,
+      `  profiles: ${profile.profiles.join(", ")}`,
+      "  features:",
+    );
+    for (const key of FEATURE_KEYS) {
+      const feature = profile.features[key];
+      lines.push(
+        `    ${key.padEnd(13)} ${feature.support.padEnd(12)} ${feature.summary}` +
+          (feature.profiles.length < profile.profiles.length
+            ? ` [${feature.profiles.join(", ")} only]`
+            : ""),
+      );
+    }
+  }
+  return lines;
 }
 
 function formatResult(result: AgentResult, format: string | undefined): string {
@@ -85,6 +123,7 @@ function formatResult(result: AgentResult, format: string | undefined): string {
   if (result.check) lines.push(`check: ${result.stale ? "stale" : "current"}`);
   if (result.bundle) lines.push("", JSON.stringify(result.bundle, null, 2));
   if (result.compatibility) lines.push("", JSON.stringify(result.compatibility, null, 2));
+  if (result.specs) lines.push("", ...formatSpecs(result.specs as SpecsPayload));
   if (result.diagnostics.length) {
     lines.push("", "diagnostics:");
     for (const item of result.diagnostics) {
@@ -120,8 +159,18 @@ function hasFindings(result: AgentResult, strict = false): boolean {
   );
 }
 
-function outputResult(result: AgentResult, opts: AgentOptions): void {
+export function outputResult(result: AgentResult, opts: AgentOptions): void {
   result.ok = !hasFindings(result, Boolean(opts.strict));
+  process.stdout.write(formatResult(result, opts.format));
+  if (!result.ok) terminate(2);
+}
+
+/**
+ * Writes a result whose `ok` has already been decided by the caller. `doctor`
+ * needs this because {@link hasFindings} fails on any approximate mapping even
+ * without `--strict`, which would make every codex bundle a doctor failure.
+ */
+export function outputDecidedResult(result: AgentResult, opts: AgentOptions): void {
   process.stdout.write(formatResult(result, opts.format));
   if (!result.ok) terminate(2);
 }
@@ -144,30 +193,7 @@ function compareOutput(
   targets: AgentTarget[],
   selectedProfiles: AgentProfile[],
 ): boolean {
-  const expected = new Map(artifacts.map((artifact) => [artifact.path, artifact]));
-  for (const artifact of artifacts) {
-    const file = path.join(output, artifact.path);
-    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
-    if (
-      !fs.readFileSync(file).equals(artifact.content) ||
-      (fs.statSync(file).mode & 0o777) !== artifact.mode
-    )
-      return false;
-  }
-  for (const target of targets)
-    for (const profile of selectedProfiles) {
-      const root = path.join(output, target, profile);
-      if (!fs.existsSync(root)) return false;
-      const walk = (directory: string): boolean =>
-        fs.readdirSync(directory, { withFileTypes: true }).every((entry) => {
-          const full = path.join(directory, entry.name);
-          return entry.isDirectory()
-            ? walk(full)
-            : expected.has(path.relative(output, full).split(path.sep).join("/"));
-        });
-      if (!walk(root)) return false;
-    }
-  return true;
+  return outputMatches(diffOutput(output, artifacts, targets, selectedProfiles));
 }
 
 function nonempty(directory: string): boolean {
@@ -208,9 +234,9 @@ function writeAtomically(
         if (fs.existsSync(staged)) fs.renameSync(staged, destination);
         else fs.mkdirSync(destination, { recursive: true });
       }
-    const report = path.join(output, "conversion-report.json");
+    const report = path.join(output, CONVERSION_REPORT);
     if (fs.existsSync(report)) fs.rmSync(report);
-    fs.renameSync(path.join(staging, "conversion-report.json"), report);
+    fs.renameSync(path.join(staging, CONVERSION_REPORT), report);
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
   }
@@ -257,6 +283,23 @@ function publicBundle(bundle: AgentBundle): unknown {
   };
 }
 
+/**
+ * Records which generator and target profile revisions produced a tree, so a
+ * later `agent doctor` can flag output that predates the current profiles.
+ */
+function conversionProvenance(targets: AgentTarget[]): ConversionProvenance {
+  return {
+    generator: { name: packageName, version: packageVersion },
+    profileSchemaVersion: PROFILE_SCHEMA_VERSION,
+    targetProfiles: Object.fromEntries(
+      targets.map((target) => [
+        target,
+        { documentationRevision: TARGET_PROFILES[target].host.documentationRevision },
+      ]),
+    ),
+  };
+}
+
 export async function agentConvertAction(source: string, opts: AgentOptions): Promise<void> {
   const targets = resolveTargets(opts.target, true);
   const selectedProfiles = profiles(opts.profile);
@@ -279,9 +322,14 @@ export async function agentConvertAction(source: string, opts: AgentOptions): Pr
     check: Boolean(opts.check),
   };
   report.ok = !hasFindings(report, Boolean(opts.strict));
-  const persistedReport: AgentResult = { ...report, dryRun: false, check: false };
+  const persistedReport = {
+    ...report,
+    dryRun: false,
+    check: false,
+    ...conversionProvenance(targets),
+  };
   const reportArtifact: Artifact = {
-    path: "conversion-report.json",
+    path: CONVERSION_REPORT,
     content: Buffer.from(JSON.stringify(persistedReport, null, 2) + "\n"),
     mode: 0o644,
   };
@@ -326,47 +374,16 @@ export async function agentInspectAction(source: string, opts: AgentOptions): Pr
   );
 }
 
-export const COMPATIBILITY = {
-  "claude-code": {
-    skills: "exact",
-    agents: "exact",
-    hooks: "exact for portable events",
-    rules: "project",
-    policies: "project permissions",
-    mcp: "exact",
-  },
-  codex: {
-    skills: "exact",
-    agents: "project only",
-    hooks: "portable events",
-    rules: "AGENTS.md project layer",
-    policies: "project rules",
-    mcp: "exact",
-  },
-  cursor: {
-    skills: "namespaced in plugins",
-    agents: "approximate model mapping",
-    hooks: "camel-cased portable events",
-    rules: ".cursor/rules/*.mdc",
-    policies: "unsupported without hook override",
-  },
-};
-
 export async function agentCompatAction(
   source: string | undefined,
   opts: AgentOptions,
 ): Promise<void> {
-  const targets = resolveTargets(opts.target).length ? resolveTargets(opts.target) : [...TARGETS];
+  const selected = resolveTargets(opts.target);
+  const targets = selected.length ? selected : [...TARGETS];
+  const compatibility = compatibilityMatrix(targets);
   if (!source) {
     outputResult(
-      {
-        command: "compat",
-        ok: true,
-        targets,
-        artifacts: [],
-        diagnostics: [],
-        compatibility: Object.fromEntries(targets.map((target) => [target, COMPATIBILITY[target]])),
-      },
+      { command: "compat", ok: true, targets, artifacts: [], diagnostics: [], compatibility },
       opts,
     );
     return;
@@ -381,7 +398,7 @@ export async function agentCompatAction(
       targets,
       artifacts: [],
       diagnostics: rendered.diagnostics,
-      compatibility: Object.fromEntries(targets.map((target) => [target, COMPATIBILITY[target]])),
+      compatibility,
     },
     opts,
   );

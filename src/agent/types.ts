@@ -62,7 +62,7 @@ export interface Artifact {
 }
 
 export interface AgentResult {
-  command: "convert" | "validate" | "inspect" | "compat";
+  command: "convert" | "validate" | "inspect" | "compat" | "doctor" | "specs";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -71,6 +71,8 @@ export interface AgentResult {
   diagnostics: AgentDiagnostic[];
   bundle?: unknown;
   compatibility?: unknown;
+  /** The full target conformance profiles, emitted by `agent specs`. */
+  specs?: unknown;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

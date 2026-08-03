@@ -42,6 +42,7 @@ import {
   agentValidateAction,
   agentActionBoundary,
 } from "./commands/agent.js";
+import { agentSpecsAction } from "./commands/agent-specs.js";
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
 // before Commander sees them (Commander doesn't support multi-char short flags)
@@ -160,6 +161,19 @@ agent
   .option("--format <fmt>", "Output format: llm, human, json", "llm")
   .action((source: string | undefined, opts: Parameters<typeof agentCompatAction>[1]) =>
     agentActionBoundary("compat", opts, () => agentCompatAction(source, opts)),
+  );
+
+agent
+  .command("specs")
+  .description("Print the versioned target conformance profiles")
+  .option("--target <target>", "Target (repeatable, or all)", collect)
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .addHelpText(
+    "after",
+    "\nThe profiles are the source of truth for target behavior; --format json is the\nform to depend on.\n\nExit codes:\n  0  Profiles written to stdout\n  1  Invocation error",
+  )
+  .action((opts: Parameters<typeof agentSpecsAction>[0]) =>
+    agentActionBoundary("specs", opts, () => agentSpecsAction(opts)),
   );
 
 program
