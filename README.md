@@ -792,6 +792,9 @@ Synchronization uses exactly one ordered marker pair:
 <!-- claude-cli:toc:end -->
 ```
 
+Markers inside a fenced code block are ignored, so documenting the syntax — as the block above
+does — does not make a file look like it has a table of contents to synchronize.
+
 The three synchronization modes are mutually exclusive. Writes preserve surrounding text
 and the file's line-ending style, and current files are not rewritten.
 

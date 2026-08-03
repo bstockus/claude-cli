@@ -88,20 +88,32 @@ describe("toc fixer", () => {
     expect(result.unfixable[0]).toMatchObject({ rule: "toc", reason: "malformed markers" });
   });
 
-  it("refuses markers inside a fenced code block", async () => {
-    // synchronizeToc scans raw text, so a fence documenting the marker syntax
-    // looks like a real pair. Writing a table of contents into a code sample
-    // would corrupt it.
+  it("leaves markers inside a fenced code block alone", async () => {
+    // A fence documenting the marker syntax is a code sample, not a block to
+    // synchronize; writing a table of contents into it would corrupt the docs.
     const file = write(
       "doc.md",
       "# Doc\n\nSyntax:\n\n```markdown\n<!-- claude-cli:toc:start -->\n<!-- claude-cli:toc:end -->\n```\n\n## S\n",
     );
     const result = await tocFixer.plan([file], context());
     expect(result.edits).toEqual([]);
-    expect(result.unfixable[0]).toMatchObject({
-      rule: "toc",
-      reason: "markers are a code sample",
-    });
+    // Not reported either: there is nothing wrong with the document.
+    expect(result.unfixable).toEqual([]);
+  });
+
+  it("still synchronizes a real block in a document that also documents one", async () => {
+    const file = write(
+      "doc.md",
+      "# Doc\n\n```markdown\n<!-- claude-cli:toc:start -->\n<!-- claude-cli:toc:end -->\n```\n\n<!-- claude-cli:toc:start -->\nold\n<!-- claude-cli:toc:end -->\n\n## S\n",
+    );
+    const content = fs.readFileSync(file, "utf-8");
+    const result = await tocFixer.plan([file], context());
+    expect(result.edits).toHaveLength(1);
+    // The edit targets the second, real pair.
+    expect(result.edits[0].start).toBeGreaterThan(content.indexOf("```markdown"));
+    expect(applyEdits(content, result.edits)).toContain(
+      "<!-- claude-cli:toc:start -->\n- [Doc](#doc)\n  - [S](#s)\n<!-- claude-cli:toc:end -->",
+    );
   });
 
   it("writes the document's own line ending", async () => {

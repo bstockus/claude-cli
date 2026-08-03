@@ -1,4 +1,10 @@
-import type { MdHeading } from "./markdown-ast.js";
+import {
+  extractCodeBlocks,
+  isLineInCodeBlock,
+  parseMarkdown,
+  type MdCodeBlock,
+  type MdHeading,
+} from "./markdown-ast.js";
 
 export const TOC_START = "<!-- claude-cli:toc:start -->";
 export const TOC_END = "<!-- claude-cli:toc:end -->";
@@ -39,9 +45,38 @@ export type TocSynchronization =
       interior: string;
     };
 
-export function synchronizeToc(content: string, toc: string): TocSynchronization {
-  const starts = [...content.matchAll(new RegExp(TOC_START, "g"))];
-  const ends = [...content.matchAll(new RegExp(TOC_END, "g"))];
+/** 1-based line containing `offset`. */
+function lineOf(content: string, offset: number): number {
+  let line = 1;
+  for (let index = 0; index < offset && index < content.length; index++) {
+    if (content[index] === "\n") line++;
+  }
+  return line;
+}
+
+/**
+ * Locates the marker block, ignoring markers inside fenced code.
+ *
+ * Markers are found by scanning raw text, so a fenced block *documenting* the
+ * syntax — as this project's own README and `md toc` page both do — would
+ * otherwise look like a real pair, and writing a table of contents into a code
+ * sample would corrupt it.
+ *
+ * `codeBlocks` is optional only so a caller that already parsed the document
+ * can avoid a second parse. Omitting it parses rather than skipping the check,
+ * so a caller cannot silently opt out.
+ */
+export function synchronizeToc(
+  content: string,
+  toc: string,
+  codeBlocks?: readonly MdCodeBlock[],
+): TocSynchronization {
+  const fenced = codeBlocks ?? extractCodeBlocks(parseMarkdown(content));
+  const outsideFence = (match: RegExpExecArray | RegExpMatchArray): boolean =>
+    !isLineInCodeBlock(lineOf(content, match.index!), [...fenced]);
+
+  const starts = [...content.matchAll(new RegExp(TOC_START, "g"))].filter(outsideFence);
+  const ends = [...content.matchAll(new RegExp(TOC_END, "g"))].filter(outsideFence);
   if (!starts.length && !ends.length) return { status: "missing" };
   if (starts.length !== 1 || ends.length !== 1)
     return { status: "malformed", message: "Expected exactly one TOC marker pair" };

@@ -35,6 +35,10 @@ preview, or update a generated block delimited by exactly one ordered marker pai
 | `--write`                    | Off             | Replace only the marker interior.                                            |
 | `-h`, `--help`               | —               | Show help.                                                                   |
 
+Markers inside a fenced code block are ignored, so a document that shows the marker syntax as
+an example — as this page does above — is not treated as having a table of contents to
+synchronize.
+
 `--check`, `--dry-run`, and `--write` are mutually exclusive. Writes preserve surrounding
 content and line endings; current files are not rewritten. `md toc` is one of the commands
 that may modify a file, but only when `--write` is selected.

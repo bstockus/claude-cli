@@ -4,6 +4,7 @@ import { outputPath, runtime } from "../runtime.js";
 import { requireFile } from "../input.js";
 import { terminate } from "../command-result.js";
 import { renderToc, synchronizeToc } from "../toc.js";
+import { extractCodeBlocks } from "../markdown-ast.js";
 import { jsonPayload } from "../result.js";
 
 export interface TocOptions {
@@ -31,7 +32,11 @@ export function tocSynchronizationIssue(
   const headings = document.headings.filter(
     (heading) => heading.depth >= minDepth && heading.depth <= maxDepth,
   );
-  const sync = synchronizeToc(document.content, renderToc(headings, opts.ordered));
+  const sync = synchronizeToc(
+    document.content,
+    renderToc(headings, opts.ordered),
+    extractCodeBlocks(document.tree),
+  );
   if (sync.status === "missing") return { issue: "TOC markers are missing", current: false };
   if (sync.status === "malformed") return { malformed: sync.message, current: false };
   if (sync.status === "current") return { block: sync.block, current: true };

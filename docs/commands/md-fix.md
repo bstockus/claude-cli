@@ -55,11 +55,13 @@ Only touches documents that already carry a marker pair, or the documents matche
 so a document without them is left alone. A malformed marker pair is reported under
 `unfixable` rather than thrown, so one bad document cannot kill a whole-tree run.
 
-Two cases are reported under `unfixable` rather than acted on. A malformed marker pair is
-reported instead of thrown, so one bad document cannot kill a whole-tree run. And a marker pair
-inside a **fenced code block** is skipped: marker synchronization scans raw text, so a fence
-documenting the syntax looks like a real pair — `md toc --check` has always called those stale,
-which is merely noise, but writing a table of contents into a code sample would corrupt it.
+A malformed marker pair is reported under `unfixable` rather than thrown, so one bad document
+cannot kill a whole-tree run.
+
+Markers inside a **fenced code block** do not count as a marker pair, so a document that only
+_documents_ the syntax is left alone rather than having a table of contents written into its
+code sample. That exclusion lives in marker synchronization itself, so `md toc` and `md audit`
+apply it too.
 
 ### `relative-links`
 

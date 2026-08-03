@@ -1,6 +1,6 @@
 import { minimatch } from "minimatch";
 import path from "node:path";
-import { extractCodeBlocks, isLineInCodeBlock } from "../markdown-ast.js";
+import { extractCodeBlocks } from "../markdown-ast.js";
 import type { PlannedEdit } from "../edit-plan.js";
 import { renderToc, synchronizeToc, TOC_START } from "../toc.js";
 import { runtime } from "../runtime.js";
@@ -62,9 +62,15 @@ export const tocFixer: Fixer = {
       const headings = document.headings.filter(
         (heading) => heading.depth >= minDepth && heading.depth <= maxDepth,
       );
-      const sync = synchronizeToc(snapshot.content, renderToc(headings, context.toc.ordered));
+      const sync = synchronizeToc(
+        snapshot.content,
+        renderToc(headings, context.toc.ordered),
+        extractCodeBlocks(document.tree),
+      );
 
-      // Inserting markers is an authoring decision, not a fix.
+      // Inserting markers is an authoring decision, not a fix. A document whose
+      // only markers sit inside a fenced code sample lands here too, since
+      // synchronizeToc does not count those.
       if (sync.status === "missing") continue;
       if (sync.status === "malformed") {
         // A throw would let one bad document kill a whole-tree run.
@@ -78,22 +84,6 @@ export const tocFixer: Fixer = {
         continue;
       }
       if (sync.status === "current") continue;
-
-      // `synchronizeToc` scans raw text, so a fenced block *documenting* the
-      // marker syntax looks like a real marker pair. `md toc --check` has
-      // always reported those as stale, which is only noise; writing a table of
-      // contents into a code sample would corrupt it, so this fixer refuses.
-      const markerLine = lineAt(snapshot.content, sync.range.start);
-      if (isLineInCodeBlock(markerLine, extractCodeBlocks(document.tree))) {
-        unfixable.push({
-          file,
-          line: markerLine,
-          rule: "toc",
-          message: "TOC markers appear inside a fenced code block",
-          reason: "markers are a code sample",
-        });
-        continue;
-      }
 
       edits.push({
         file,
