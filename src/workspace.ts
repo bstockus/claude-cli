@@ -51,7 +51,8 @@ export function parseFrontmatter(content: string): FrontmatterResult {
   }
 }
 
-function inside(root: string, target: string): boolean {
+/** Whether `target` is `root` or lies beneath it, compared lexically. */
+export function inside(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }

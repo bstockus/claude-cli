@@ -29,31 +29,45 @@ export type ResolvedOptions<T extends Record<string, unknown>> = T & {
   paths: PathStyle;
 };
 
-export function commandOptions<T extends Record<string, unknown>>(
-  command: string,
-  builtins: T,
-  cli: Record<string, unknown>,
-): ResolvedOptions<T> {
-  const aliases: Record<string, string[]> = {
-    format: ["-fh", "-fj"],
-    style: ["-s"],
-    external: ["-e"],
-    anchors: ["-a"],
-    images: ["-i"],
-  };
+const OPTION_ALIASES: Record<string, string[]> = {
+  format: ["-fh", "-fj"],
+  style: ["-s"],
+  external: ["-e"],
+  anchors: ["-a"],
+  images: ["-i"],
+};
+
+/**
+ * Which of `cli`'s keys the user actually typed.
+ *
+ * Commander hands back defaults and typed values indistinguishably, so this
+ * re-reads argv. Config resolution needs it to know what to override, and a
+ * command that rejects conflicting options needs it to avoid misfiring on a
+ * value that came from `.claude-cli.yml` rather than the command line.
+ */
+export function explicitOptionKeys(cli: Record<string, unknown>): Set<string> {
   const argv = process.argv.slice(2);
-  const explicit = Object.fromEntries(
-    Object.entries(cli).filter(([key]) => {
+  return new Set(
+    Object.keys(cli).filter((key) => {
       const kebab = key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
       return argv.some(
         (arg) =>
           arg === `--${kebab}` ||
           arg === `--no-${kebab}` ||
           arg.startsWith(`--${kebab}=`) ||
-          (aliases[key] ?? []).includes(arg),
+          (OPTION_ALIASES[key] ?? []).includes(arg),
       );
     }),
   );
+}
+
+export function commandOptions<T extends Record<string, unknown>>(
+  command: string,
+  builtins: T,
+  cli: Record<string, unknown>,
+): ResolvedOptions<T> {
+  const typed = explicitOptionKeys(cli);
+  const explicit = Object.fromEntries(Object.entries(cli).filter(([key]) => typed.has(key)));
   const resolved = resolveCommandOptions(runtime().config, command, builtins, explicit);
   if (!ALL_FORMATS.includes(resolved.format)) {
     throw new Error(`Invalid output format: ${String(resolved.format)}`);

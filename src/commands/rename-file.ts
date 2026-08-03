@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { extractLinks, parseMarkdown } from "../markdown-ast.js";
-import { resolveLocalPath, splitLocalTarget } from "../link-target.js";
+import {
+  composeTarget,
+  escapeTargetParens,
+  resolveLocalPath,
+  splitLocalTarget,
+  targetStyle,
+} from "../link-target.js";
 import { outputPath, runtime } from "../runtime.js";
 import type { OutputFormat } from "../types.js";
 import { jsonPayload } from "../result.js";
+import { applyEdits, temporarySibling, type TextEdit } from "../edit-plan.js";
 
 interface Options {
   envelope?: boolean;
@@ -13,12 +20,6 @@ interface Options {
   dryRun: boolean;
   include: string[];
   exclude: string[];
-}
-
-interface Edit {
-  start: number;
-  end: number;
-  value: string;
 }
 
 export interface FileReferenceUpdate {
@@ -51,18 +52,6 @@ function pathEntryExists(file: string): boolean {
   }
 }
 
-function applyEdits(content: string, edits: readonly Edit[]): string {
-  let result = content;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-    result = result.slice(0, edit.start) + edit.value + result.slice(edit.end);
-  }
-  return result;
-}
-
-function encodePath(value: string, encoded: boolean): string {
-  return encoded ? encodeURI(value).replace(/#/g, "%23") : value;
-}
-
 function rewrittenTarget(
   rawTarget: string,
   originalTarget: string,
@@ -78,34 +67,21 @@ function rewrittenTarget(
   const movedTarget = resolved === source;
   if (!movedTarget && oldDocument === newDocument) return undefined;
   const absoluteTarget = movedTarget ? destination : resolved;
+  const style = targetStyle(rawTarget);
   let nextPath: string;
-  if (split.rawPath.startsWith("/")) {
+  if (style.rootRelative) {
     if (!movedTarget) return undefined;
     nextPath = `/${path.relative(root, absoluteTarget).split(path.sep).join("/")}`;
   } else {
     nextPath = path.relative(path.dirname(newDocument), absoluteTarget).split(path.sep).join("/");
     if (!nextPath) nextPath = path.basename(absoluteTarget);
-    if (split.rawPath.startsWith("./") && !nextPath.startsWith(".")) nextPath = `./${nextPath}`;
   }
-  nextPath = encodePath(nextPath, split.rawPath.includes("%"));
-  const suffix = split.query + (split.rawFragment === undefined ? "" : `#${split.rawFragment}`);
-  const next = nextPath + suffix;
+  const next = composeTarget(nextPath, split, style);
   return next === originalTarget ? undefined : next;
 }
 
 function format(options: Options): OutputFormat {
   return options.format === "human" || options.format === "json" ? options.format : "llm";
-}
-
-function temporarySibling(file: string): string {
-  for (let index = 0; index < 100; index++) {
-    const candidate = path.join(
-      path.dirname(file),
-      `.${path.basename(file)}.claude-cli-${process.pid}-${index}.tmp`,
-    );
-    if (!fs.existsSync(candidate)) return candidate;
-  }
-  throw new Error(`Unable to allocate temporary file beside ${file}`);
 }
 
 export async function renameFileAction(
@@ -147,7 +123,7 @@ export async function renameFileAction(
   for (const file of files) {
     const content = fs.readFileSync(file, "utf-8");
     const effectiveFile = file === source && markdownSource ? destination : file;
-    const edits: Edit[] = [];
+    const edits: TextEdit[] = [];
     const seen = new Set<string>();
     for (const link of extractLinks(parseMarkdown(content), content)) {
       if (
@@ -170,9 +146,7 @@ export async function renameFileAction(
       if (!next) continue;
       seen.add(key);
       const oldTarget = content.slice(link.destinationStart, link.destinationEnd);
-      const newTarget = oldTarget.includes("\\")
-        ? next.replace(/[()]/g, (character) => `\\${character}`)
-        : next;
+      const newTarget = escapeTargetParens(next, targetStyle(link.target, oldTarget));
       edits.push({ start: link.destinationStart, end: link.destinationEnd, value: newTarget });
       updates.push({
         file: effectiveFile,

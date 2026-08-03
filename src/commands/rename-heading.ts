@@ -8,6 +8,7 @@ import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
 import type { OutputFormat } from "../types.js";
 import { jsonPayload } from "../result.js";
+import { applyEdits, type TextEdit } from "../edit-plan.js";
 
 interface RenameHeadingOptions {
   envelope?: boolean;
@@ -25,24 +26,10 @@ interface AnchorUpdate {
   newRef: string;
 }
 
-interface Edit {
-  start: number;
-  end: number;
-  value: string;
-}
-
 function resolveFormat(opts: RenameHeadingOptions): OutputFormat {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";
-}
-
-function applyEdits(content: string, edits: Edit[]): string {
-  let result = content;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-    result = result.slice(0, edit.start) + edit.value + result.slice(edit.end);
-  }
-  return result;
 }
 
 function headingTextSpan(content: string, line: number): { start: number; end: number } {
@@ -80,7 +67,7 @@ export async function renameHeadingAction(
 
   const matched = headings[matchIdx];
   const headingSpan = headingTextSpan(content, matched.line);
-  const headingEdit: Edit = { ...headingSpan, value: newHeading };
+  const headingEdit: TextEdit = { ...headingSpan, value: newHeading };
   const contentWithHeading = applyEdits(content, [headingEdit]);
   const newHeadings = extractHeadings(parseMarkdown(contentWithHeading));
   const slugChanges = new Map<string, string>();
@@ -107,7 +94,7 @@ export async function renameHeadingAction(
   }
 
   const updates: AnchorUpdate[] = [];
-  const editsByFile = new Map<string, Edit[]>();
+  const editsByFile = new Map<string, TextEdit[]>();
   const contents = new Map<string, string>();
   editsByFile.set(filePath, [headingEdit]);
 

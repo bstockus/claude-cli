@@ -1,8 +1,8 @@
 import path from "node:path";
 import { findMarkdownFiles } from "../lint.js";
 import type { OutputFormat } from "../types.js";
-import { splitLocalTarget, resolveLocalPath } from "../link-target.js";
-import { outputPath, runtime } from "../runtime.js";
+import { documentsReferencing } from "../backlinks.js";
+import { outputPath } from "../runtime.js";
 import { requireDirectory } from "../input.js";
 import { jsonPayload } from "../result.js";
 
@@ -86,31 +86,11 @@ export async function refsToAction(
   const searchDir = requireDirectory(directory ?? ".", opts);
 
   const mdFiles = findMarkdownFiles(searchDir, { include: opts.include, exclude: opts.exclude });
-  const incomingRefs: IncomingRef[] = [];
-
-  for (const mdFile of mdFiles) {
-    const refs = runtime().workspace.document(mdFile).references;
-
-    for (const ref of refs) {
-      if (ref.isExternal || ref.isAnchorOnly) continue;
-
-      const targetFile = splitLocalTarget(ref.target).path;
-      const resolvedTarget = resolveLocalPath(mdFile, targetFile, runtime().config.root);
-
-      if (resolvedTarget === targetPath) {
-        incomingRefs.push({
-          sourceFile: mdFile,
-          line: ref.line,
-          linkText: ref.linkText,
-          rawTarget: ref.target,
-        });
-      }
-    }
-  }
-
-  const shownRefs = incomingRefs.map((ref) => ({
-    ...ref,
+  const shownRefs: IncomingRef[] = documentsReferencing(mdFiles, targetPath).map((ref) => ({
     sourceFile: outputPath(ref.sourceFile, opts),
+    line: ref.line,
+    linkText: ref.linkText,
+    rawTarget: ref.rawTarget,
   }));
   const output = formatResults(shownRefs, outputPath(targetPath, opts), format, opts);
   process.stdout.write(output + "\n");

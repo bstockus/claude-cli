@@ -3,6 +3,7 @@ import { outputPath, runtime } from "../runtime.js";
 import { terminate } from "../command-result.js";
 import { requireFile } from "../input.js";
 import { jsonPayload } from "../result.js";
+import { nestedValue } from "../object-path.js";
 
 interface FrontmatterOptions {
   envelope?: boolean;
@@ -14,18 +15,6 @@ function resolveFormat(opts: FrontmatterOptions): OutputFormat {
   const fmt = opts.format;
   if (fmt === "llm" || fmt === "human" || fmt === "json") return fmt;
   return "llm";
-}
-
-function getNestedValue(obj: unknown, keyPath: string): unknown {
-  const parts = keyPath.split(".");
-  let current: unknown = obj;
-  for (const part of parts) {
-    if (current === null || current === undefined || typeof current !== "object") {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
 }
 
 function formatYamlLike(data: unknown, indent: number = 2): string {
@@ -81,7 +70,7 @@ export async function frontmatterAction(file: string, opts: FrontmatterOptions):
   const data = frontmatter.data;
 
   if (opts.key) {
-    const value = getNestedValue(data, opts.key);
+    const value = nestedValue(data, opts.key);
     if (value === undefined) {
       process.stderr.write(`Error: Key not found: ${opts.key}\n`);
       terminate(1);

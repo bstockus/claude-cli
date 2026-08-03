@@ -4,6 +4,7 @@ import { resolveLocalPath, splitLocalTarget } from "../link-target.js";
 import { requireDirectory } from "../input.js";
 import { outputPath, runtime } from "../runtime.js";
 import { jsonPayload } from "../result.js";
+import { nestedValue } from "../object-path.js";
 
 type QueryKind =
   "links-to" | "duplicates" | "unused-assets" | "code-blocks" | "tasks" | "missing-h1";
@@ -28,15 +29,6 @@ interface QueryEnvelope {
   count: number;
   results: unknown[];
   summary?: Record<string, number>;
-}
-
-function nestedValue(data: Record<string, unknown>, key: string): unknown {
-  let current: unknown = data;
-  for (const part of key.split(".")) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
 }
 
 function primitive(value: unknown): string | undefined {
@@ -72,7 +64,9 @@ function duplicateResults(files: string[], field: string, opts: QueryOptions): u
     }
     const key = field === "slug" ? "slug" : field.slice("frontmatter:".length);
     if (!key) throw new Error("frontmatter duplicate fields require a key");
-    const value = primitive(nestedValue(data, key));
+    // `arrays: false` preserves this command's long-standing refusal to index
+    // into a frontmatter list; `md frontmatter --key` allows it.
+    const value = primitive(nestedValue(data, key, { arrays: false }));
     if (value !== undefined) add(value, file, 1);
   }
   return [...groups.values()]
