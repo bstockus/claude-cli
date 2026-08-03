@@ -232,7 +232,7 @@ describe("convert then import then convert is a fixed point", () => {
 
       const rerendered = renderBundle(loadBundle(bundleRoot), [target], ["plugin"]);
       const shape = (entries: Array<{ path: string; content: Buffer }>) =>
-        entries.map((entry) => `${entry.path} ${entry.content.toString("base64")}`).sort();
+        entries.map((entry) => `${entry.path} ${entry.content.toString("base64")}`).sort();
       expect(
         shape(
           rerendered.artifacts.map((artifact) => ({
