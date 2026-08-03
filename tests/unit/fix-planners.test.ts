@@ -88,6 +88,22 @@ describe("toc fixer", () => {
     expect(result.unfixable[0]).toMatchObject({ rule: "toc", reason: "malformed markers" });
   });
 
+  it("refuses markers inside a fenced code block", async () => {
+    // synchronizeToc scans raw text, so a fence documenting the marker syntax
+    // looks like a real pair. Writing a table of contents into a code sample
+    // would corrupt it.
+    const file = write(
+      "doc.md",
+      "# Doc\n\nSyntax:\n\n```markdown\n<!-- claude-cli:toc:start -->\n<!-- claude-cli:toc:end -->\n```\n\n## S\n",
+    );
+    const result = await tocFixer.plan([file], context());
+    expect(result.edits).toEqual([]);
+    expect(result.unfixable[0]).toMatchObject({
+      rule: "toc",
+      reason: "markers are a code sample",
+    });
+  });
+
   it("writes the document's own line ending", async () => {
     const file = write("crlf.md", STALE.replace(/\n/g, "\r\n"));
     const [edit] = (await tocFixer.plan([file], context())).edits;
