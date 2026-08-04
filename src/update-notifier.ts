@@ -21,6 +21,13 @@ export const SCHEMA_COMMAND = "schema";
 export const COMPLETION_COMMAND = "completion";
 
 /**
+ * `scripts run` hands its stderr to a child process, so a notice appended at exit
+ * would land inside whatever the calling hook captured.
+ */
+export const SCRIPTS_COMMAND = "scripts";
+export const SCRIPTS_RUN_SUBCOMMAND = "run";
+
+/**
  * The machine-stream guarantees, published through `describe` so consumers can
  * read them rather than infer them. Exported from here, next to the gate that
  * enforces them, so the two cannot drift.
@@ -33,7 +40,7 @@ export const NOTIFIER_CONTRACT = {
     "CI is set",
     "stderr is not a TTY",
     "--format is json, jsonl, or sarif, including a project-configured format",
-    "the command is check-update, describe, schema, completion, or the internal cache refresh",
+    "the command is check-update, describe, schema, completion, scripts run, or the internal cache refresh",
   ],
   optOutEnv: "CLAUDE_CLI_NO_UPDATE_NOTIFIER",
 } as const;
@@ -230,6 +237,11 @@ export function isNotifierAllowed(ctx: Omit<NotifyDecision, "cache" | "currentVe
   // where stderr *is* a TTY. Without this the notice would print on every shell
   // start and the background refresh would spawn on every shell start.
   if (ctx.argv.includes(COMPLETION_COMMAND)) return false;
+  // `scripts run` gives its stderr to a child process, so anything written at
+  // exit lands inside the output a calling hook captured. Matched by adjacency
+  // rather than by `includes`, because `run` is also a legal script name.
+  const scriptsIndex = ctx.argv.indexOf(SCRIPTS_COMMAND);
+  if (scriptsIndex !== -1 && ctx.argv[scriptsIndex + 1] === SCRIPTS_RUN_SUBCOMMAND) return false;
   return true;
 }
 

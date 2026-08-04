@@ -44,6 +44,7 @@ export interface DescribedCommand {
   jsonlSchema?: string | null;
   sarifSchema?: string | null;
   exitCodes: ExitCodeMeaning[];
+  exitCodePassthrough?: { min: number; max: number; description: string };
   stream: { success: ContractStream; findings?: ContractStream } | null;
   writes: boolean | null;
   stability: "stable" | "experimental" | "undeclared";
@@ -126,6 +127,10 @@ export function walkCommands(program: Command): DescribedCommand[] {
         jsonlSchema: contract?.jsonlSchema ?? null,
         sarifSchema: contract?.sarifSchema ?? null,
         exitCodes: contract?.exitCodes ?? [],
+        // Emitted only where it applies, so no existing command's bytes change.
+        ...(contract?.exitCodePassthrough
+          ? { exitCodePassthrough: contract.exitCodePassthrough }
+          : {}),
         stream: contract?.stream ?? null,
         writes: contract?.writes ?? null,
         stability: contract?.stability ?? "undeclared",

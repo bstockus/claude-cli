@@ -1,6 +1,6 @@
 # Complete command listing
 
-`claude-cli` contains two toolsets plus update and contract commands. Angle brackets in usage
+`claude-cli` contains three toolsets plus update and contract commands. Angle brackets in usage
 signatures are required arguments; square brackets are optional arguments.
 
 ## Global interface
@@ -16,6 +16,19 @@ signatures are required arguments; square brackets are optional arguments.
 | [`claude-cli serve <protocol>`](commands/serve.md)        | Serve the workspace engine over a machine protocol, read-only.         |
 | `claude-cli agent`                                        | Convert, validate, and inspect portable agent bundles.                 |
 | `claude-cli md`                                           | Validate, query, analyze, and modify Markdown workspaces.              |
+| `claude-cli scripts`                                      | Resolve and run named scripts declared in `.claude-cli.yml`.           |
+
+## Script commands
+
+Resolution walks every `.claude-cli.yml` from the working directory to the repository root, and
+the nearest file that defines the name wins. The script runs with its working directory pinned
+to the registry that declared it, so a hook keeps working after the caller changes directory.
+
+| Command                                             | Description                                               |
+| --------------------------------------------------- | --------------------------------------------------------- |
+| [`scripts run <name>`](commands/scripts-run.md)     | Run a named script from anywhere in the tree.             |
+| [`scripts which <name>`](commands/scripts-which.md) | Show which registry defines a script, without running it. |
+| [`scripts list`](commands/scripts-list.md)          | List every script visible from the working directory.     |
 
 ## Agent commands
 

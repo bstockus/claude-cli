@@ -60,6 +60,15 @@ unknown properties would break on every such change.
 
 Per-command meanings are in `describe` output under `exitCodes`.
 
+One command deviates, and says so in its own field rather than in prose. `scripts run` executes
+a child process, and in `llm` and `human` formats it forwards that child's exit status
+verbatim — any value from `0` to `255`, including `128 + signal` for a child killed by a
+signal — because a hook that reads `$?` needs the real code. `describe` reports that range
+under `exitCodePassthrough`, which is present only on commands that forward a status. The
+`exitCodes` array continues to describe the codes this tool decides itself: `1` for an
+unresolvable name or a script that never started, and under `--format json`, `0` and `2` for a
+script that ran.
+
 ## Streams
 
 The general rule is **actionable findings to stderr, clean and informational output to

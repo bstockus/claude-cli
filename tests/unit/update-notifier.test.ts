@@ -194,6 +194,14 @@ describe("isNotifierAllowed", () => {
     expect(isNotifierAllowed({ ...allowedCtx, argv: ["completion", "zsh"] })).toBe(false);
   });
 
+  it("stays quiet for scripts run, whose child owns the real stderr", () => {
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["scripts", "run", "build"] })).toBe(false);
+    // Matched by adjacency: `run` is a legal script name, and resolving one is
+    // not executing one.
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["scripts", "which", "run"] })).toBe(true);
+    expect(isNotifierAllowed({ ...allowedCtx, argv: ["scripts", "list"] })).toBe(true);
+  });
+
   it("enforces every condition the published contract lists", () => {
     // NOTIFIER_CONTRACT is what `describe` reports to consumers, so each listed
     // condition must actually suppress the notice.
@@ -208,10 +216,11 @@ describe("isNotifierAllowed", () => {
         ...allowedCtx,
         argv: ["md", "lint", "--format=sarif"],
       },
-      "the command is check-update, describe, schema, completion, or the internal cache refresh": {
-        ...allowedCtx,
-        argv: ["describe"],
-      },
+      "the command is check-update, describe, schema, completion, scripts run, or the internal cache refresh":
+        {
+          ...allowedCtx,
+          argv: ["describe"],
+        },
     };
     expect(Object.keys(cases).sort()).toEqual([...NOTIFIER_CONTRACT.suppressedWhen].sort());
     for (const [condition, ctx] of Object.entries(cases))

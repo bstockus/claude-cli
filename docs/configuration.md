@@ -85,11 +85,49 @@ urls:
   headFallbackStatuses: [400, 403, 405, 501]
   reportRedirects: false
 
+scripts: {} # named scripts for the scripts toolset; schema documented below
+
 commands: {} # command-specific defaults; schema documented below
 ```
 
 Omitted mappings are treated as empty mappings. Lists must contain strings except the two
 HTTP-status lists. Every boolean field must be a YAML boolean, not a quoted string.
+
+## Script registry
+
+`scripts` is a top-level key, not a `commands.` entry. It declares named scripts for the
+[`scripts` toolset](commands/scripts-run.md), which resolves a name by walking every
+`.claude-cli.yml` from the working directory to the repository root and taking the nearest file
+that defines it. Markdown commands never read this block, but they do validate it — a typo here
+is an error for every command that loads configuration, rather than a surprise at run time.
+
+```yaml
+scripts:
+  gather-context:
+    description: Collect repository context for the planning skill
+    run: ./.claude/scripts/gather-context.sh "$@"
+  lint-changed:
+    exec: ["npm", "run", "lint"]
+    cwd: registry
+```
+
+| Key           | Type            | Description                                                        |
+| ------------- | --------------- | ------------------------------------------------------------------ |
+| `run`         | String          | Shell body. Forwarded arguments arrive as `$1`…`$n`.               |
+| `exec`        | List of strings | Argv run with no shell. Forwarded arguments are appended.          |
+| `shell`       | String          | Shell for `run`; defaults to `/bin/sh`. Rejected alongside `exec`. |
+| `cwd`         | String          | `registry` (default), `invocation`, or a registry-relative path.   |
+| `description` | String          | Shown by `scripts list` and `scripts which`.                       |
+
+Exactly one of `run` and `exec` is required. Script names are lowercase and may contain
+`.`, `-`, `_`, and `:`, up to 64 characters, with no leading or trailing punctuation and no
+path separators. A `cwd` path is resolved against the registry directory and must stay inside
+the resolution boundary.
+
+Note the asymmetry with the rest of this file: the chain walk validates only the `scripts:`
+block of each file it consults. An ancestor's malformed `urls:` block belongs to a different
+project and does not break `scripts run` for a sibling package, even though `loadConfig` would
+reject the same file.
 
 ## Frontmatter rule value types
 
@@ -110,9 +148,14 @@ Schema validation and shortcut rules are cumulative when both are configured.
 
 ## Command-default schema
 
-`commands` is a mapping keyed by an exact `md` command name. Agent commands and
-`check-update` cannot be configured here. Unknown command names and unknown option keys are
-errors. Positional arguments cannot be configured.
+`commands` is a mapping keyed by an exact `md` command name. Agent commands, `scripts`
+commands, and `check-update` cannot be configured here. Unknown command names and unknown
+option keys are errors. Positional arguments cannot be configured.
+
+`scripts` commands are excluded deliberately rather than by omission: a checked-in
+configuration file may declare what a script _is_, under `scripts:`, but must never be able to
+change how one is invoked. This is the same rule that keeps `write` out of the configurable set
+for `md fix` and `md check-snippets`.
 
 All command mappings may use the shared `format` and `paths` keys. `stdinName` is accepted
 only by commands that consume a single file or stdin, as listed below.
@@ -238,6 +281,12 @@ urls:
   cacheTtl: 86400000
   headFallbackStatuses: [400, 403, 405, 501]
   reportRedirects: false
+scripts:
+  gather-context:
+    description: Collect repository context for the planning skill
+    run: ./.claude/scripts/gather-context.sh "$@"
+  lint-changed:
+    exec: ["npm", "run", "lint"]
 commands:
   lint-dir:
     summary: true

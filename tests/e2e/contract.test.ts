@@ -127,7 +127,7 @@ describe("describe", () => {
       commands: Array<{ id: string; stability: string }>;
     };
     // Leaf commands are the ones a contract applies to; groups are containers.
-    const groups = new Set(["md", "agent"]);
+    const groups = new Set(["md", "agent", "scripts"]);
     const walked = described.commands
       .map((command) => command.id)
       .filter((id) => !groups.has(id))
@@ -531,7 +531,17 @@ describe("declared output schemas match real output", () => {
       outcome: "success",
       exitCode: 0,
     },
+    {
+      label: "scripts list",
+      schema: "script-list",
+      args: () => ["scripts", "list", "-fj"],
+      outcome: "success",
+      exitCode: 0,
+    },
   ];
+
+  // Groups whose id is two tokens.
+  const GROUPS = new Set(["md", "agent", "scripts"]);
 
   it.each(cases)("$label", async (testCase) => {
     const context = {
@@ -543,7 +553,7 @@ describe("declared output schemas match real output", () => {
     const args = testCase.args(context);
     const result = await run(...args);
 
-    const id = args[0] === "md" || args[0] === "agent" ? `${args[0]} ${args[1]}` : args[0];
+    const id = GROUPS.has(args[0]) ? `${args[0]} ${args[1]}` : args[0];
     const contract = COMMAND_CONTRACTS[id];
     expect(contract, `${id} has no contract entry`).toBeDefined();
     expect(

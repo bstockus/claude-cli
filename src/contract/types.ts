@@ -41,6 +41,12 @@ export interface CommandContract {
   /** External schema URI for `--format sarif`. */
   sarifSchema?: string | null;
   exitCodes: ExitCodeMeaning[];
+  /**
+   * Present only when the command forwards a child process's exit status
+   * verbatim, which is outside the three declared codes. `exitCodes` still
+   * describes the outcomes this tool decides itself.
+   */
+  exitCodePassthrough?: { min: number; max: number; description: string };
   /** Which stream carries the primary payload, per outcome. */
   stream: { success: ContractStream; findings?: ContractStream };
   /** True when the command may modify files on disk. */

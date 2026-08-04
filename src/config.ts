@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { parse as parseYaml } from "yaml";
+import { isInside, knownKeys, object, optionalString, strings } from "./config-schema.js";
+import { parseScriptsBlock } from "./scripts/registry.js";
 import type { OutputFormat } from "./types.js";
 
 export type PathStyle = "absolute" | "relative";
@@ -210,6 +212,7 @@ const ROOT_KEYS = new Set([
   "frontmatter",
   "toc",
   "assets",
+  "scripts",
 ]);
 
 const AUTOMATION_FORMAT_COMMANDS = new Set([
@@ -220,46 +223,14 @@ const AUTOMATION_FORMAT_COMMANDS = new Set([
   "check-urls",
 ]);
 
-function object(value: unknown, name: string): Record<string, unknown> {
-  if (value === undefined) return {};
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${name} must be a mapping`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function knownKeys(value: Record<string, unknown>, allowed: Set<string>, name: string): void {
-  const unknown = Object.keys(value).find((key) => !allowed.has(key));
-  if (unknown) throw new Error(`Unknown ${name} key: ${unknown}`);
-}
-
-function strings(value: unknown, name: string, fallback: string[]): string[] {
-  if (value === undefined) return fallback;
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new Error(`${name} must be a list of strings`);
-  }
-  return [...value] as string[];
-}
-
 function boolean(value: unknown, name: string, fallback: boolean): boolean {
   if (value === undefined) return fallback;
   if (typeof value !== "boolean") throw new Error(`${name} must be a boolean`);
   return value;
 }
 
-function optionalString(value: unknown, name: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") throw new Error(`${name} must be a string`);
-  return value;
-}
-
 function resolveFile(base: string, value: string | undefined): string | undefined {
   return value === undefined ? undefined : path.resolve(base, value);
-}
-
-function isInside(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== "..");
 }
 
 const BOOLEAN_OPTIONS = new Set([
@@ -443,10 +414,13 @@ export function selectRoot(argv: readonly string[], cwd: string = process.cwd())
   return path.resolve(cwd);
 }
 
+/** The one configuration filename, shared with the `scripts` chain walk. */
+export const CONFIG_FILENAME = ".claude-cli.yml";
+
 export function findConfig(start: string = process.cwd()): string | undefined {
   let current = path.resolve(start);
   while (true) {
-    const candidate = path.join(current, ".claude-cli.yml");
+    const candidate = path.join(current, CONFIG_FILENAME);
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(current);
     if (parent === current) return undefined;
@@ -468,6 +442,16 @@ export function loadConfig(
   knownKeys(rootObject, ROOT_KEYS, "configuration");
   if (configPath && rootObject.version !== 1) {
     throw new Error("Configuration version must be 1");
+  }
+
+  // Validated for its throw, then discarded. `scripts:` belongs to the `scripts`
+  // toolset, which resolves it through its own chain walk rather than through
+  // this loader; without the call here a typo'd `exce:` would pass every `md`
+  // command silently and only surface at `scripts run`. Keeping the parsed
+  // registry off ResolvedConfig also keeps `serve` from being one line away from
+  // exposing an executable surface.
+  if (configPath) {
+    parseScriptsBlock(rootObject.scripts, { file: configPath, directory: base });
   }
 
   const files = object(rootObject.files, "files");

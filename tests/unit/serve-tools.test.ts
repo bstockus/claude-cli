@@ -103,6 +103,16 @@ describe("tool manifest", () => {
   it("names each tool exactly once", () => {
     expect(TOOL_BY_NAME.size).toBe(SERVE_TOOLS.length);
   });
+
+  // SERVE_TOOLS is a hand-written table with nothing stopping an addition, and
+  // `scripts run` executes arbitrary commands. Exposing it over MCP would hand a
+  // host process execution through a server documented as read-only.
+  it("exposes no tool that runs a script", () => {
+    const executing = SERVE_TOOLS.filter((tool) =>
+      /scripts?[_-]?run|run[_-]?scripts?/.test(tool.name),
+    );
+    expect(executing.map((tool) => tool.name)).toEqual([]);
+  });
 });
 
 describe("read-only guarantee", () => {

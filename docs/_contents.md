@@ -29,6 +29,12 @@ This directory is the reference documentation for `claude-cli`.
 - [`agent doctor`](commands/agent-doctor.md)
 - [`agent specs`](commands/agent-specs.md)
 
+## Script commands
+
+- [`scripts run`](commands/scripts-run.md)
+- [`scripts which`](commands/scripts-which.md)
+- [`scripts list`](commands/scripts-list.md)
+
 ## Other top-level commands
 
 - [`check-update`](commands/check-update.md)

@@ -33,6 +33,7 @@ same thing forever.
 | [014](014-read-only-mcp-server.md)                            | Read-Only MCP Server                            | P2       | Medium                   | Shipped     | Expose the workspace engine directly to agent hosts       |
 | [015](015-library-editor-and-ci-integrations.md)              | Library, Editor, and CI Integrations            | P3       | Large                    | Not started | Reuse the engine without shell parsing                    |
 | [016](016-additional-targets-through-an-adapter-interface.md) | Additional Targets Through an Adapter Interface | P3       | Per target: medium-large | Not started | Broaden reach after target maintenance is sustainable     |
+| [017](017-named-script-registry.md)                           | Named Script Registry and the `scripts` Toolset | P1       | Medium                   | Shipped     | Make hook and skill scripts resolve from any directory    |
 
 Statuses are `Shipped`, `In progress`, `Not started`, or `Withdrawn`. This table replaces the
 review's original priority summary, so priority and status cannot drift apart.

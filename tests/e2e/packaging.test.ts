@@ -74,6 +74,16 @@ describe("published package contents", () => {
     expect(packedFiles).toContain("dist/serve/tools.js");
   });
 
+  // Same trap again: src/scripts/ only reaches dist while every file in it stays
+  // a TypeScript module. Without these, `scripts run` would resolve nothing and
+  // report every name as undeclared.
+  it("ships the script resolver and executor", () => {
+    expect(packedFiles).toContain("dist/commands/scripts.js");
+    expect(packedFiles).toContain("dist/scripts/registry.js");
+    expect(packedFiles).toContain("dist/scripts/resolve.js");
+    expect(packedFiles).toContain("dist/scripts/execute.js");
+  });
+
   it("ships the docs but not the sources or tests", () => {
     expect(packedFiles).toContain("README.md");
     expect(packedFiles).toContain("LICENSE");

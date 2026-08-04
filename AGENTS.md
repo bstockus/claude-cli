@@ -14,16 +14,19 @@ src/formatters.ts      llm / human / json output rendering
 src/result.ts          the single `--format json` write path, and `--envelope`
 src/agent/targets/*.ts versioned per-target capability profiles
 src/contract/*.ts      published JSON Schemas + the per-command contract registry
+src/scripts/*.ts       named-script registry parsing, chain resolution, and execution
+src/config-schema.ts   validators shared by the config loader and the script registry
 tests/{unit,integration,e2e}
 ```
 
-There are two toolsets, `md` and `agent`, plus the top-level `check-update`, `describe`, and
-`schema`. Adding a subcommand means: a `src/commands/<name>.ts` exporting an action, a
+There are three toolsets, `md`, `agent`, and `scripts`, plus the top-level `check-update`,
+`describe`, and `schema`. Adding a subcommand means: a `src/commands/<name>.ts` exporting an action, a
 `command(...)` registration in `src/cli.ts`, a `src/contract/registry.ts` entry, a
 `docs/commands/<name>.md` page with entries in `docs/commands.md` and `docs/_contents.md`, a
 README entry, and e2e coverage. For an `agent` subcommand, also widen
 `AgentResult["command"]` in `src/agent/types.ts` and the `command` enum plus `commands` list
-in `src/contract/schemas/agent.ts`.
+in `src/contract/schemas/agent.ts`. A new toolset group also needs adding to the `groups` set
+in `tests/e2e/contract.test.ts`, which otherwise reports the group itself as `undeclared`.
 
 ## Conventions
 
@@ -168,6 +171,41 @@ in `src/contract/schemas/agent.ts`.
   filters on `Fixer.default`; it is the only fixer whose edits are decided by files other than
   the Markdown being fixed, and a broadly-run `md fix --write` must not silently acquire that
   reach.
+- **`scripts run` is the only command that executes anything, and the guards are the feature.**
+  What makes it acceptable is that the command is declared by name in a tracked file rather than
+  discovered in analyzed content — a resolver, not an evaluator. The load-bearing rules:
+  resolution stops at the git root (or a deeper `--root`) and refuses entirely outside a
+  repository, `node_modules` is skipped so a vendored `.claude-cli.yml` cannot win by being
+  nearest, the resolved `cwd` is containment-checked as well as the registry file, and `run:`
+  passes forwarded arguments as separate argv entries to `sh -c` so the shell binds them to
+  `$1…$n` without ever lexing them. Interpolating arguments into the body, or reaching for
+  `spawn(cmd, { shell: true })`, gives that last guarantee away. `scripts` commands are absent
+  from `COMMAND_OPTIONS` on purpose: config may declare what a script is, never how it is run.
+  `src/serve/tools.ts` must never expose it; `tests/unit/serve-tools.test.ts` has a tripwire.
+- **`run:` uses `/bin/sh`, not `$SHELL`.** A login shell may be fish or csh, neither of which
+  binds positional parameters for `-c`, so honoring `$SHELL` would make a committed registry
+  behave differently per machine — the exact problem the toolset exists to solve. A body needing
+  bashisms sets `shell:` explicitly.
+- **`scripts run` forwards the child's exit status verbatim in llm and human formats.** That is
+  outside `CommandExit`'s `1 | 2` type, so the action assigns `process.exitCode` and returns
+  instead of throwing. It must never call `process.exit()` — a piped `--format json` write is
+  asynchronous and would be truncated. The divergence is declared through the optional
+  `exitCodePassthrough` field on `CommandContract`, added rather than widening
+  `ExitCodeMeaning.code`, whose `enum: [0,1,2]` is published in the `describe` schema.
+- **The `-fh`/`-fj` argv rewrite in `src/cli.ts` stops at the first `--`.** Everything after it
+  is forwarded to a child process untouched; rewriting there would hand the script
+  `--format=json` in place of the `-fj` the user typed.
+- **`loadConfig` validates `scripts:` but never stores it.** `ROOT_KEYS` must list `scripts` or a
+  registry breaks every `md` command in that workspace, and the `parseScriptsBlock` call after it
+  exists so a typo is an error at `md lint` rather than a surprise at `scripts run`. Keeping the
+  parsed registry off `ResolvedConfig` is what keeps `serve` more than one line from exposing it.
+  The chain walk in `src/scripts/resolve.ts` deliberately validates _only_ `scripts:` — an
+  ancestor's malformed `urls:` block belongs to another project.
+- **This repository has no `.claude-cli.yml`, and adding one is not free.** Any config file sets
+  `config.root` to its directory, which confines the workspace — `tests/e2e/contract.test.ts`
+  spawns the CLI with the repo as cwd while operating on temporary workspaces, and every one of
+  those cases fails with "Directory is outside configured workspace root". Dogfooding the
+  `scripts:` block means insulating that suite first.
 - **No published schema may set `additionalProperties: false` or `$ref` another document.**
   The first would make every additive change break validating consumers; the second would make
   `claude-cli schema <id>` return something that cannot be compiled on its own.

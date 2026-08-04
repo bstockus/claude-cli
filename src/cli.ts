@@ -58,10 +58,21 @@ import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
 import { completionAction } from "./commands/completion.js";
 import { serveAction, type ServeOptions } from "./commands/serve.js";
+import {
+  scriptsListAction,
+  scriptsRunAction,
+  scriptsWhichAction,
+  type ScriptsOptions,
+} from "./commands/scripts.js";
 
 // Pre-process argv to expand -fh/-fj shorthands into --format values
-// before Commander sees them (Commander doesn't support multi-char short flags)
-const argv = process.argv.map((arg) => {
+// before Commander sees them (Commander doesn't support multi-char short flags).
+// Bounded to the tokens before the first `--`: everything after it is forwarded
+// verbatim to a child process by `scripts run`, and rewriting a token there would
+// hand the child `--format=json` in place of the `-fj` the user typed.
+const forwardedFrom = process.argv.indexOf("--");
+const argv = process.argv.map((arg, index) => {
+  if (forwardedFrom !== -1 && index >= forwardedFrom) return arg;
   if (arg === "-fh") return "--format=human";
   if (arg === "-fj") return "--format=json";
   return arg;
@@ -445,6 +456,53 @@ program
   .action((protocol: string, opts: Record<string, unknown>) =>
     serveAction(protocol, opts as unknown as ServeOptions),
   );
+
+const scripts = program
+  .command("scripts")
+  .description("Resolve and run named scripts declared in .claude-cli.yml")
+  .addHelpText(
+    "after",
+    "\nA script name resolves the same from any directory: every .claude-cli.yml from the\nworking directory up to the repository root is consulted, and the nearest file that\ndefines the name wins. The script runs with its working directory pinned to the\nregistry that declared it, which is what makes a hook survive a change of directory.\n\nFormat shorthands:\n  -fh             Shorthand for --format=human\n  -fj             Shorthand for --format=json",
+  );
+
+const scriptsCommon = (command: Command): Command =>
+  command
+    .option("--format <fmt>", "Output format: llm, human, json", "llm")
+    .option("--envelope", "Wrap --format json output in the versioned result envelope")
+    .option("--root <dir>", "Stop the upward walk at this directory")
+    .option("--config <file>", "Use a specific .claude-cli.yml configuration file")
+    .option("--no-config", "Disable project configuration discovery");
+
+scriptsCommon(scripts.command("run"))
+  .description("Run a named script from anywhere in the tree")
+  .argument("<name>", "Script name declared under scripts: in a .claude-cli.yml")
+  .argument("[args...]", "Arguments forwarded to the script, after --")
+  .addHelpText(
+    "after",
+    "\nExamples:\n  claude-cli scripts run gather-context\n  claude-cli scripts run lint-changed -- --since main\n\nIn llm and human formats the script's streams pass through untouched and its exit\nstatus becomes this process's exit status, so a hook reads the real code. With\n--format json the streams are captured into the payload instead.\n\nRefuses to run outside a Git repository unless --root sets the boundary explicitly.\n\nExit codes:\n  *  llm and human: the script's own exit status, verbatim\n  0  --format json: the script exited 0\n  1  Unresolvable name, or the script could not be started\n  2  --format json: the script exited non-zero or was killed by a signal",
+  )
+  .action((name: string, args: string[], opts: Record<string, unknown>) =>
+    scriptsRunAction(name, args, opts as ScriptsOptions),
+  );
+
+scriptsCommon(scripts.command("which"))
+  .description("Show which registry defines a script, without running it")
+  .argument("<name>", "Script name")
+  .addHelpText(
+    "after",
+    "\nReports the winning .claude-cli.yml, the working directory the script would run in,\nand any same-named definitions it shadows.\n\nExit codes:\n  0  The name resolved\n  1  Invocation error\n  2  No script by that name",
+  )
+  .action((name: string, opts: Record<string, unknown>) =>
+    scriptsWhichAction(name, opts as ScriptsOptions),
+  );
+
+scriptsCommon(scripts.command("list"))
+  .description("List every script visible from the working directory")
+  .addHelpText(
+    "after",
+    "\nNearest definition wins, so a name declared in a nested registry hides the one above\nit. Files that could not be parsed are reported rather than skipped silently.\n\nExit codes:\n  0  Listing written to stdout\n  1  Invocation error\n  2  A consulted configuration file could not be read",
+  )
+  .action((opts: Record<string, unknown>) => scriptsListAction(opts as ScriptsOptions));
 
 // Internal: refreshes the cached latest version. Spawned detached by the notifier.
 program

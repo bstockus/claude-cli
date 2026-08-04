@@ -106,6 +106,17 @@ export const describeSchema: SchemaEntry = {
           jsonlSchema: { type: ["string", "null"] },
           sarifSchema: { type: ["string", "null"] },
           exitCodes: { type: "array", items: EXIT_CODE_DEF },
+          exitCodePassthrough: {
+            type: "object",
+            description:
+              "Present only when the command forwards a child process's exit status verbatim, which is outside the three codes `exitCodes` declares.",
+            required: ["min", "max", "description"],
+            properties: {
+              min: { type: "integer" },
+              max: { type: "integer" },
+              description: { type: "string" },
+            },
+          },
           stream: {
             type: ["object", "null"],
             properties: {

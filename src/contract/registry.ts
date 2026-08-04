@@ -147,6 +147,61 @@ const CONTRACTS: CommandContract[] = [
       "Speaks the Model Context Protocol over stdio. stdout carries JSON-RPC frames rather than a payload, so --format is not accepted and no output schema applies; every diagnostic goes to stderr, which MCP treats as the server log. Tool arguments and results are described by each tool's own JSON Schema, retrieved through tools/list rather than through `schema`. Every tool is read-only and every path argument is confined to --root, resolved through symlinks; refactor tools are deliberately absent rather than gated. Configuration is discovered from --root, so a tool answers the same as the equivalent md command in that workspace. Unlike md index this never writes the workspace cache: the server keeps a bounded in-memory cache and leaves the on-disk index alone.",
   },
 
+  // Scripts
+  {
+    id: "scripts run",
+    formats: BASE_FORMATS,
+    defaultFormat: "llm",
+    formatConfigurable: false,
+    outputSchema: "script-run",
+    exitCodes: [
+      OK("--format json: the script exited 0"),
+      { code: 1, meaning: "Unresolvable name, refused boundary, or the script never started" },
+      FINDINGS("--format json: the script exited non-zero or was killed by a signal"),
+    ],
+    exitCodePassthrough: {
+      min: 0,
+      max: 255,
+      description:
+        "In llm and human formats the script's own exit status is this process's exit status, verbatim; a script killed by a signal reports 128 + the signal number.",
+    },
+    stream: { success: "stdout", findings: "stdout" },
+    writes: false,
+    stability: "experimental",
+    notes:
+      "The only command that executes anything. In llm and human formats the child inherits all three streams and its exit status passes through unchanged, so a hook reads the real code and this command writes nothing of its own to stdout; `exitCodes` describes --format json, which captures the streams into the payload instead. A script that never started exits 1 rather than 2, so a typo in exec[0] stays distinguishable from a script that ran and failed. The payload goes to stdout in every outcome, including a failed script, so a consumer never has to switch streams. Resolution walks every .claude-cli.yml from the working directory to the repository root and the nearest definition of the name wins; files under node_modules are skipped, and running outside a Git repository is refused unless --root sets the boundary. Configuration cannot change what executes: scripts commands accept no `commands:` defaults. The update notice is suppressed, because the child owns the real stderr.",
+  },
+  {
+    id: "scripts which",
+    formats: BASE_FORMATS,
+    defaultFormat: "llm",
+    formatConfigurable: false,
+    outputSchema: "script-which",
+    exitCodes: [OK("The name resolved"), USAGE, FINDINGS("No script by that name")],
+    stream: { success: "stdout", findings: "stderr" },
+    writes: false,
+    stability: "experimental",
+    notes:
+      "Resolves without executing. Reports the winning registry, the working directory the script would run in, the same-named definitions it shadows, and every file the walk opened. An unreadable file nearer than the winner is an error rather than a skip, because it might have defined the name.",
+  },
+  {
+    id: "scripts list",
+    formats: BASE_FORMATS,
+    defaultFormat: "llm",
+    formatConfigurable: false,
+    outputSchema: "script-list",
+    exitCodes: [
+      OK("Listing written to stdout"),
+      USAGE,
+      FINDINGS("A consulted configuration file could not be read"),
+    ],
+    stream: { success: "stdout", findings: "stderr" },
+    writes: false,
+    stability: "experimental",
+    notes:
+      "One entry per visible name after nearest-definition-wins is applied; a shadowed definition is recorded on the winner rather than listed separately. Unlike `scripts which`, an unreadable file is reported and the listing still prints, because a listing that silently omitted a file would read as complete.",
+  },
+
   // Agent
   agentCommand("convert", {
     writes: true,
