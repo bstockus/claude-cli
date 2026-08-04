@@ -13,6 +13,7 @@ src/snippets.ts        source-linked snippet parsing, extraction, and write plan
 src/formatters.ts      llm / human / json output rendering
 src/result.ts          the single `--format json` write path, and `--envelope`
 src/agent/targets/*.ts versioned per-target capability profiles
+src/agent/test/*.ts    bundle contract-test parsing, assertion evaluation, and digests
 src/contract/*.ts      published JSON Schemas + the per-command contract registry
 src/scripts/*.ts       named-script registry parsing, chain resolution, and execution
 src/config-schema.ts   validators shared by the config loader and the script registry
@@ -117,9 +118,9 @@ in `tests/e2e/contract.test.ts`, which otherwise reports the group itself as `un
 - **`Artifact.origin` is emitted only when `"native"`.** Always emitting it would change
   `conversion-report.json` and `agent convert -fj` bytes for every bundle that has no overlay.
 - **`hasFindings` fails on any `approximate` diagnostic.** That is right for `convert` and
-  `validate` and wrong for `doctor`, `import`, `upgrade`, and `package`, where approximation is
-  the expected outcome rather than a defect. Those four call `outputDecidedResult` with their own
-  error/strict rule. A new command that reports approximations should do the same.
+  `validate` and wrong for `doctor`, `import`, `upgrade`, `package`, `audit`, and `test`, where
+  approximation is the expected outcome rather than a defect. Those call `outputDecidedResult`
+  with their own error/strict rule. A new command that reports approximations should do the same.
 - **`agent audit`'s exit rule is split by origin, not just by severity.** Almost every review
   finding is a `warning` by design, so blocking on errors alone would let a bundle embedding a
   literal credential exit `0`. But audit forwards render diagnostics, and every Codex bundle
@@ -171,6 +172,19 @@ in `tests/e2e/contract.test.ts`, which otherwise reports the group itself as `un
   filters on `Fixer.default`; it is the only fixer whose edits are decided by files other than
   the Markdown being fixed, and a broadly-run `md fix --write` must not silently acquire that
   reach.
+- **`agent test` discovers `tests/**/*.test.yaml` by convention, with no manifest key.** Adding
+  one would end schema 2's "schema 1 plus `marketplace:` and `native:`, nothing else" property
+  and would lock the feature out of v1 and legacy bundles, which can carry tests today. The
+  directory is invisible to the parser (`assets` is read from its own configured root), and
+  `buildSourceInventory` walks the whole bundle root, so the test files do enter `agent audit`'s
+  inventory — deliberately, they are bundle files — without tripping a check.
+- **The `agent test` tree digest is a value users paste, so its serialization is contract.**
+  Artifacts sorted by byte comparison of path, each contributing
+  `<path>\n<octal mode>\n<sha256>\n`, hashed. Changing the order, the separators, or what is
+  included invalidates every golden digest in every bundle in the world. The command never
+  writes, so there is no `--update` to regenerate them with; a mismatch reports the actual value
+  in the finding and in `test.cases[].failures[].actual`. The test-file `schemaVersion` is a
+  fourth hand-owned version — see `docs/contract.md`; semantic-release does not touch it.
 - **`scripts run` is the only command that executes anything, and the guards are the feature.**
   What makes it acceptable is that the command is declared by name in a tracked file rather than
   discovered in analyzed content — a resolver, not an evaluator. The load-bearing rules:

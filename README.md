@@ -293,6 +293,7 @@ claude-cli agent doctor ./my-bundle --target all --output ./dist
 claude-cli agent convert ./my-bundle --target all --output ./dist --profile both
 claude-cli agent package ./my-bundle --target all --output ./release --archive
 claude-cli agent audit ./my-bundle --target all --format sarif
+claude-cli agent test ./my-bundle --target all --strict
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
 claude-cli agent convert ./my-bundle --target all --output ./dist --check
 claude-cli agent convert ./my-bundle --target all --output ./dist --dry-run --report ./ci/convert.json
@@ -333,6 +334,15 @@ what executables and binaries it carries, and — against a previous package's `
 what changed since the last release. It is explainable static analysis with stable diagnostic
 IDs and SARIF output, not a sandbox or a malware detector: nothing is executed, and exit `2`
 means there are findings to review, never that a bundle is malicious.
+
+`agent test` runs contract tests stored with the bundle, under `tests/*.test.yaml`. A case
+asserts what a bundle actually renders — the paths it emits for a target and profile, a
+fragment of a rendered manifest, a substituted placeholder, a diagnostic that must or must not
+appear, a golden digest over the whole tree — so a rename, a refactor, or a revised target
+profile cannot change the output silently. It is model-free by construction: expectations are
+evaluated against the same in-memory render `agent convert` would write, nothing is executed,
+and nothing is written, including the golden digests, which are reported for you to paste back
+rather than rewritten in place.
 
 Target behavior is described by versioned conformance profiles that the renderer itself
 reads, so what `agent specs` publishes cannot drift from what `agent convert` produces.

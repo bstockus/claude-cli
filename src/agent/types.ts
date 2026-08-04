@@ -3,6 +3,7 @@ import type { UpgradeReport } from "./upgrade.js";
 import type { ImportReport } from "./import/normalize.js";
 import type { PackageReport } from "./package/index.js";
 import type { AuditReport } from "./audit/index.js";
+import type { TestReport } from "./test/index.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -167,7 +168,8 @@ export interface AgentResult {
     | "upgrade"
     | "import"
     | "package"
-    | "audit";
+    | "audit"
+    | "test";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -190,6 +192,8 @@ export interface AgentResult {
   package?: PackageReport;
   /** Review surface and findings summary, emitted by `agent audit`. */
   audit?: AuditReport;
+  /** Contract test results, emitted by `agent test`. */
+  test?: TestReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

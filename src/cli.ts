@@ -53,6 +53,7 @@ import { agentUpgradeAction } from "./commands/agent-upgrade.js";
 import { agentImportAction } from "./commands/agent-import.js";
 import { agentPackageAction } from "./commands/agent-package.js";
 import { agentAuditAction } from "./commands/agent-audit.js";
+import { agentTestAction } from "./commands/agent-test.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
@@ -368,6 +369,25 @@ agent
   )
   .action((source: string, opts: Parameters<typeof agentAuditAction>[1]) =>
     agentActionBoundary("audit", opts, () => agentAuditAction(source, opts)),
+  );
+
+agent
+  .command("test")
+  .description("Run the model-free contract tests stored with a bundle")
+  .argument("<source>", "Bundle root")
+  .option("--tests <path>", "Test file or directory (default: tests/ in the bundle)")
+  .option("--target <target>", "Target (repeatable, or all)", collect)
+  .option("--profile <profile>", "Output profile: plugin, project, both", "both")
+  .option("--case <name>", "Run only this case (repeatable)", collect)
+  .option("--strict", "Treat warnings as blocking findings")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nEvery expectation is evaluated against the same in-memory render agent convert\nwould write. Nothing is executed, no model is called, and no file is written; a\nchanged golden digest is reported with both the expected and the actual value.\n--target and --profile narrow each case's own selection rather than widening it.\n\nExit codes:\n  0  Every selected case passed\n  1  Invocation or I/O error\n  2  A failing case, an invalid test file, or a warning under --strict",
+  )
+  .action((source: string, opts: Parameters<typeof agentTestAction>[1]) =>
+    agentActionBoundary("test", opts, () => agentTestAction(source, opts)),
   );
 
 agent

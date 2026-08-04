@@ -22,6 +22,7 @@ export const agentResultSchema: SchemaEntry = {
     "agent import",
     "agent package",
     "agent audit",
+    "agent test",
   ],
   schema: {
     $schema: DRAFT,
@@ -46,6 +47,7 @@ export const agentResultSchema: SchemaEntry = {
           "import",
           "package",
           "audit",
+          "test",
         ],
       },
       ok: { type: "boolean" },
@@ -264,6 +266,102 @@ export const agentResultSchema: SchemaEntry = {
             description:
               "What this command does not do. Carried as data rather than as a permanent notice, which would pollute every consumer's diagnostics and every --strict run.",
             ...stringArray,
+          },
+        },
+      },
+      test: {
+        description: "Contract test results, emitted by `agent test`.",
+        type: "object",
+        required: ["schemaVersion", "files", "checks", "counts", "cases", "native"],
+        properties: {
+          schemaVersion: {
+            type: "string",
+            description:
+              "The test-file format this release reads. Hand-owned, and independent of the package, contract, target-profile, and bundle versions.",
+          },
+          files: {
+            description: "Test files loaded, bundle-relative POSIX.",
+            ...stringArray,
+          },
+          checks: {
+            description:
+              "Assertion codes this run can report. Like `audit.checks`, this is what distinguishes 'every expectation held' from 'nothing was expected'.",
+            ...stringArray,
+          },
+          counts: {
+            type: "object",
+            required: ["cases", "passed", "failed", "skipped", "assertions"],
+            properties: {
+              cases: { type: "integer", minimum: 0 },
+              passed: { type: "integer", minimum: 0 },
+              failed: { type: "integer", minimum: 0 },
+              skipped: { type: "integer", minimum: 0 },
+              assertions: { type: "integer", minimum: 0 },
+            },
+          },
+          cases: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "file", "status", "targets", "profiles", "assertions", "failures"],
+              properties: {
+                name: { type: "string" },
+                file: { type: "string" },
+                status: { enum: ["passed", "failed", "skipped"] },
+                targets: {
+                  description: "The selection actually evaluated, after every filter.",
+                  type: "array",
+                  items: { enum: TARGETS },
+                },
+                profiles: { type: "array", items: { enum: PROFILES } },
+                assertions: {
+                  type: "object",
+                  required: ["total", "passed", "failed"],
+                  properties: {
+                    total: { type: "integer", minimum: 0 },
+                    passed: { type: "integer", minimum: 0 },
+                    failed: { type: "integer", minimum: 0 },
+                  },
+                },
+                failures: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: [
+                      "code",
+                      "assertion",
+                      "message",
+                      "expected",
+                      "actual",
+                      "target",
+                      "profile",
+                    ],
+                    properties: {
+                      code: { type: "string", pattern: "^AB[0-9]{3}$" },
+                      assertion: {
+                        type: "string",
+                        description: "Which expectation failed, e.g. `paths.present`.",
+                      },
+                      message: { type: "string" },
+                      expected: { type: "string" },
+                      actual: { type: "string" },
+                      target: { enum: TARGETS },
+                      profile: { enum: PROFILES },
+                    },
+                  },
+                },
+                reason: {
+                  type: "string",
+                  description: "Why a case was skipped. Present only on `skipped`.",
+                },
+              },
+            },
+          },
+          native: {
+            type: "array",
+            maxItems: 0,
+            description:
+              "Reserved for evidence from a host's own validator. Always empty: agent test never spawns a process.",
           },
         },
       },

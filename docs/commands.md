@@ -44,6 +44,7 @@ to the registry that declared it, so a hook keeps working after the caller chang
 | [`agent compat [source]`](commands/agent-compat.md)     | Show the compatibility matrix or analyze one bundle against selected targets.   |
 | [`agent package <source>`](commands/agent-package.md)   | Build a distributable package with catalogs, checksums, and archives.           |
 | [`agent audit <source>`](commands/agent-audit.md)       | Review a bundle's executable surface, permissions, and supply chain.            |
+| [`agent test <source>`](commands/agent-test.md)         | Run the model-free contract tests stored with a bundle.                         |
 | [`agent doctor [source]`](commands/agent-doctor.md)     | Check a bundle and generated output against the target conformance profiles.    |
 | [`agent specs`](commands/agent-specs.md)                | Print the versioned target conformance profiles.                                |
 

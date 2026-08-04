@@ -1,0 +1,4 @@
+schemaVersion: '2'
+name: tested
+version: 1.2.0
+description: A bundle that carries its own contract tests

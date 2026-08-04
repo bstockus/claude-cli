@@ -1,0 +1,58 @@
+schemaVersion: '1'
+
+cases:
+  - name: claude-code plugin carries the manifest and the skill
+    targets: [claude-code]
+    profiles: [plugin]
+    expect:
+      paths:
+        present:
+          - .claude-plugin/plugin.json
+          - skills/{name}/SKILL.md
+        absent:
+          - .claude/rules/**
+      files:
+        - path: skills/greet/SKILL.md
+          mode: '0644'
+          includes:
+            - 'description: Greet the user'
+            - ${CLAUDE_PLUGIN_ROOT}/assets
+            - $ARGUMENTS
+          excludes:
+            - ${BUNDLE_ROOT}
+          matches:
+            - '^---\n'
+      json:
+        - path: .claude-plugin/plugin.json
+          contains:
+            name: tested
+            version: 1.2.0
+            skills: ./skills/
+      diagnostics:
+        excludes: [AB302]
+        maxSeverity: warning
+
+  - name: codex rewrites the placeholders it cannot pass through
+    targets: [codex]
+    profiles: [plugin]
+    expect:
+      files:
+        - path: skills/greet/SKILL.md
+          includes:
+            - ${PLUGIN_ROOT}/assets
+          excludes:
+            - $ARGUMENTS
+            - ${BUNDLE_ROOT}
+      diagnostics:
+        includes: [AB302]
+
+  - name: the rule reaches the project profile only
+    targets: [claude-code]
+    profiles: [project]
+    expect:
+      paths:
+        present:
+          - .claude/rules/{name}.md
+          - .claude/skills/greet/SKILL.md
+        absent:
+          - .claude-plugin/**

@@ -13,6 +13,7 @@ import type {
   MarkdownComponent,
 } from "../agent/types.js";
 import type { AuditReport } from "../agent/audit/index.js";
+import type { TestReport } from "../agent/test/index.js";
 import { formatAgentSarif } from "../agent/sarif.js";
 import { agentFormatsFor } from "../formats.js";
 import type { OutputFormat } from "../types.js";
@@ -179,6 +180,30 @@ function formatAudit(audit: AuditReport): string[] {
   return [...lines, "", ...audit.limitations.map((item) => `note: ${item}`)];
 }
 
+/**
+ * Renders the case results. The unmet expectations themselves are the
+ * diagnostics, so this reports what ran — which is what makes "0 failed" mean
+ * something rather than "nothing was asserted".
+ */
+function formatTest(report: TestReport): string[] {
+  const { counts } = report;
+  const lines = [
+    `cases: ${counts.cases}  passed: ${counts.passed}  failed: ${counts.failed}  skipped: ${counts.skipped}  assertions: ${counts.assertions}`,
+    `test files: ${report.files.length ? report.files.join(", ") : "none"}`,
+  ];
+  if (report.cases.length) {
+    lines.push("", "cases:");
+    for (const item of report.cases)
+      lines.push(
+        `  ${item.status.padEnd(7)} ${item.name}` +
+          (item.targets.length ? ` [${item.targets.join(", ")}/${item.profiles.join(", ")}]` : "") +
+          (item.reason ? ` (${item.reason})` : "") +
+          `  ${item.assertions.passed}/${item.assertions.total} assertions`,
+      );
+  }
+  return lines;
+}
+
 function formatResult(result: AgentResult, opts: AgentOptions): string {
   const format = opts.format;
   // Keyed off the command so the message stays byte-identical for the
@@ -203,6 +228,7 @@ function formatResult(result: AgentResult, opts: AgentOptions): string {
   if (result.specs) lines.push("", ...formatSpecs(result.specs as SpecsPayload));
   if (result.doctor) lines.push("", ...formatDoctor(result.doctor));
   if (result.audit) lines.push("", ...formatAudit(result.audit));
+  if (result.test) lines.push("", ...formatTest(result.test));
   if (result.diagnostics.length) {
     lines.push("", "diagnostics:");
     for (const item of result.diagnostics) {

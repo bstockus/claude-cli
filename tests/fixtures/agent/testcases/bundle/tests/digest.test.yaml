@@ -1,0 +1,14 @@
+schemaVersion: '1'
+
+cases:
+  # Golden digests: agent test never rewrites these. A mismatch reports the
+  # actual value alongside the expected one, which is what you paste back here
+  # once you have confirmed the change was intended.
+  - name: the cursor plugin tree is byte-for-byte unchanged
+    targets: [cursor]
+    profiles: [plugin]
+    expect:
+      digest:
+        tree: 9a2c533a3fc00f52c68cea6c022db4450087004cf80e660e80c2780b3f1e758a
+        files:
+          skills/tested-greet/SKILL.md: 7db8a47da4051b8867e7f6eb4f4d8bea69cdaa9bf07898f52c05f90888288a74

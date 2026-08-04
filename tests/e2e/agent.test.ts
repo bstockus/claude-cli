@@ -57,6 +57,7 @@ describe("agent CLI", () => {
       "import",
       "package",
       "audit",
+      "test",
     ])
       expect(result.stdout).toContain(command);
   });
@@ -1136,6 +1137,158 @@ describe("agent audit", () => {
     const bundle = await scaffold("skill", "hook", "mcp");
     const before = fs.readdirSync(bundle, { recursive: true }).map(String).sort();
     await run("agent", "audit", bundle, "--target", "all");
+    expect(fs.readdirSync(bundle, { recursive: true }).map(String).sort()).toEqual(before);
+  });
+});
+
+describe("agent test", () => {
+  /** The bundle that carries its own passing contract tests. */
+  const tested = path.resolve("tests/fixtures/agent/testcases/bundle");
+
+  /** A copy of it, so a case can be broken without touching the fixture. */
+  function copy(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-test-e2e-"));
+    temporary.push(root);
+    const bundle = path.join(root, "tested");
+    fs.cpSync(tested, bundle, { recursive: true });
+    return bundle;
+  }
+
+  it("runs the bundle's own tests and reports what it evaluated", async () => {
+    const result = await run("agent", "test", tested, "-fj");
+    expect(result.exitCode, result.stdout).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.command).toBe("test");
+    expect(payload.ok).toBe(true);
+    expect(payload.test.counts.failed).toBe(0);
+    expect(payload.test.counts.passed).toBe(payload.test.counts.cases);
+    expect(payload.test.counts.assertions).toBeGreaterThan(0);
+    expect(payload.test.files).toEqual(["tests/digest.test.yaml", "tests/render.test.yaml"]);
+    expect(payload.test.checks.length).toBeGreaterThan(0);
+    // Reserved for a host validator this command never runs.
+    expect(payload.test.native).toEqual([]);
+  });
+
+  it("fails the case whose golden digest moved, reporting the actual value", async () => {
+    const bundle = copy();
+    const skill = path.join(bundle, "skills", "greet", "SKILL.md");
+    fs.writeFileSync(skill, `${fs.readFileSync(skill, "utf8")}\nAn extra line.\n`);
+
+    const result = await run("agent", "test", bundle, "-fj");
+    expect(result.exitCode).toBe(2);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.ok).toBe(false);
+    const failed = payload.test.cases.find(
+      (item: { status: string }) => item.status === "failed",
+    ) as { failures: Array<{ code: string; expected: string; actual: string }> };
+    expect(failed.failures.map((item) => item.code)).toContain("AB715");
+    // Both values are reported, which is the whole no-write digest workflow.
+    expect(failed.failures[0].actual).toMatch(/^[0-9a-f]{64}$/);
+    expect(failed.failures[0].actual).not.toBe(failed.failures[0].expected);
+  });
+
+  it("fails a path, file, JSON, and diagnostic expectation with its own code", async () => {
+    const bundle = copy();
+    fs.writeFileSync(
+      path.join(bundle, "tests", "render.test.yaml"),
+      [
+        "schemaVersion: '1'",
+        "cases:",
+        "  - name: everything fails",
+        "    targets: [claude-code]",
+        "    profiles: [plugin]",
+        "    expect:",
+        "      paths:",
+        // Quoted: inside a flow sequence a leading `{` would open a mapping.
+        "        present: ['agents/{name}.md']",
+        "        absent: ['skills/**']",
+        "      files:",
+        "        - path: skills/greet/SKILL.md",
+        "          includes: ['nowhere in this file']",
+        "      json:",
+        "        - path: .claude-plugin/plugin.json",
+        "          contains: { name: wrong }",
+        "      diagnostics:",
+        "        includes: [AB999]",
+        "",
+      ].join("\n"),
+    );
+    fs.rmSync(path.join(bundle, "tests", "digest.test.yaml"));
+
+    const result = await run("agent", "test", bundle, "-fj");
+    expect(result.exitCode).toBe(2);
+    const codes = JSON.parse(result.stdout).diagnostics.map((item: { code: string }) => item.code);
+    for (const code of ["AB710", "AB711", "AB712", "AB713", "AB714"]) expect(codes).toContain(code);
+  });
+
+  it("reports a malformed test file as AB700 without hiding the valid cases", async () => {
+    const bundle = copy();
+    fs.writeFileSync(
+      path.join(bundle, "tests", "broken.test.yaml"),
+      "schemaVersion: '1'\ncases:\n  - name: no such target\n    targets: [borg]\n",
+    );
+    const result = await run("agent", "test", bundle, "-fj");
+    expect(result.exitCode).toBe(2);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.diagnostics.map((item: { code: string }) => item.code)).toContain("AB700");
+    expect(payload.test.counts.passed).toBeGreaterThan(0);
+  });
+
+  it("narrows to a target and a named case, and refuses an unknown name", async () => {
+    const narrowed = JSON.parse(
+      (await run("agent", "test", tested, "--target", "codex", "-fj")).stdout,
+    );
+    expect(narrowed.test.counts.skipped).toBeGreaterThan(0);
+    expect(
+      narrowed.test.cases
+        .filter((item: { status: string }) => item.status === "passed")
+        .every((item: { targets: string[] }) => item.targets.every((t) => t === "codex")),
+    ).toBe(true);
+
+    const named = JSON.parse(
+      (
+        await run(
+          "agent",
+          "test",
+          tested,
+          "--case",
+          "the rule reaches the project profile only",
+          "-fj",
+        )
+      ).stdout,
+    );
+    expect(named.test.counts.passed).toBe(1);
+    expect(
+      named.test.cases.filter((item: { status: string }) => item.status === "skipped"),
+    ).toHaveLength(named.test.counts.cases - 1);
+
+    const unknown = await run("agent", "test", tested, "--case", "nope", "-fj");
+    expect(unknown.exitCode).toBe(1);
+    expect(JSON.parse(unknown.stdout).diagnostics[0].code).toBe("AB000");
+  });
+
+  it("warns rather than passing silently when a bundle carries no tests", async () => {
+    const minimal = path.resolve("tests/fixtures/agent/conformance/minimal/bundle");
+    const clean = await run("agent", "test", minimal, "-fj");
+    expect(clean.exitCode).toBe(0);
+    const payload = JSON.parse(clean.stdout);
+    expect(payload.test.counts.cases).toBe(0);
+    expect(payload.diagnostics.map((item: { code: string }) => item.code)).toContain("AB701");
+
+    // --strict is how CI asks "and there were tests, right?".
+    expect((await run("agent", "test", minimal, "--strict")).exitCode).toBe(2);
+  });
+
+  it("refuses a --tests path that does not exist", async () => {
+    const result = await run("agent", "test", tested, "--tests", "nope", "-fj");
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout).diagnostics[0].message).toMatch(/does not exist/);
+  });
+
+  it("writes nothing", async () => {
+    const bundle = copy();
+    const before = fs.readdirSync(bundle, { recursive: true }).map(String).sort();
+    await run("agent", "test", bundle, "--target", "all");
     expect(fs.readdirSync(bundle, { recursive: true }).map(String).sort()).toEqual(before);
   });
 });

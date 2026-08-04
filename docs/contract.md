@@ -24,6 +24,20 @@ Individual payloads are versioned separately, by the major in their schema id pa
 change to one command's output publishes `v2/<id>.json` and changes that command's
 `outputSchema`; it does not bump `schemaVersion`.
 
+### The other hand-owned versions
+
+Four versions in this project are owned by hand rather than by semantic-release, and none of
+them is the package version. They version different things and move independently:
+
+| Version                        | Versions                                               | Reported by                          |
+| ------------------------------ | ------------------------------------------------------ | ------------------------------------ |
+| Contract `schemaVersion`       | The contract surface described here                    | `describe`, the `--envelope` wrapper |
+| Target profile `schemaVersion` | The structure of a target conformance profile          | `agent specs`                        |
+| Bundle `schemaVersion`         | The `agent-bundle.yaml` format authors write           | `agent inspect`                      |
+| Test file `schemaVersion`      | The assertion format `agent test` cases are written in | `agent test` (`test.schemaVersion`)  |
+
+A normal release bumps none of them.
+
 ## Schema ids
 
 Schema ids look like URLs:

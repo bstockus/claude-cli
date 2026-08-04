@@ -291,6 +291,16 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "All output goes to stdout, including the SARIF form and the failure result for an invocation error — unlike the md diagnostic commands, which route findings to stderr. The pass/fail rule is split by origin: a warning audit itself found is blocking, because almost every review finding is a warning by design, while a forwarded parse or render warning is not unless --strict says so. Exit 2 means findings to review, not proof that a bundle is malicious. --format sarif has no agent-result payload, so an invocation error under it prints plainly and exits 1.",
   }),
+  agentCommand("test", {
+    stability: "experimental",
+    exitCodes: [
+      OK("Every selected case passed"),
+      USAGE,
+      FINDINGS("A failing case, an invalid test file, or a warning under --strict"),
+    ],
+    notes:
+      "Experimental because the test-file format may still change; it carries its own hand-owned schemaVersion, reported back as `test.schemaVersion`. Model-free by construction: expectations are evaluated against the same in-memory render agent convert would write, so no model is called, no host tooling is executed, and no file is written. `test.native` is reserved for evidence from a host's own validator and is always empty; agent specs publishes the validator commands to run yourself. An unmet expectation is an error, so unlike agent audit no per-code split is needed; a forwarded parse or render warning blocks only under --strict, and so does AB701, which reports that a bundle carried no test cases at all. An unknown --case name is a usage error rather than a run that selects nothing, so a typo in CI cannot read as a pass. --target and --profile intersect each case's own selection rather than widening it.",
+  }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],
     stream: { success: "stdout" },
