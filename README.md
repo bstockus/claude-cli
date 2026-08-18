@@ -38,6 +38,27 @@ ln -sf "$(npm root -g)/@bstockus/claude-cli/dist/cli.js" ~/.local/bin/claude-cli
 
 Make sure `~/.local/bin` is on your `PATH`.
 
+### Installing from source with `npm link`
+
+Skip the registry entirely and link a local clone if you don't have a GitHub Packages
+token, or want to run a specific commit instead of the latest published release:
+
+```bash
+git clone git@github.com:bstockus/claude-cli.git
+cd claude-cli
+npm ci
+npm run build   # tsc -> dist/cli.js
+npm link        # symlinks the global `claude-cli` binary to this working tree
+```
+
+`npm link` points the global `claude-cli` binary at `dist/cli.js` in this working tree
+instead of copying files, so pulling new commits only requires `npm run build` again — no
+need to re-run `npm link`. Remove the link with:
+
+```bash
+npm unlink -g @bstockus/claude-cli
+```
+
 ## Development
 
 ```bash
@@ -52,7 +73,7 @@ npm run lint       # ESLint
 npm run format     # Prettier (write); `npm run format:check` in CI
 npm run typecheck  # tsc --noEmit
 
-npm link           # expose the working tree as the global `claude-cli`
+npm link           # expose the working tree as the global `claude-cli`, see Install above
 npm unlink -g @bstockus/claude-cli
 ```
 
