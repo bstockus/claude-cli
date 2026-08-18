@@ -301,6 +301,35 @@ const CONTRACTS: CommandContract[] = [
     notes:
       "Experimental because the test-file format may still change; it carries its own hand-owned schemaVersion, reported back as `test.schemaVersion`. Model-free by construction: expectations are evaluated against the same in-memory render agent convert would write, so no model is called, no host tooling is executed, and no file is written. `test.native` is reserved for evidence from a host's own validator and is always empty; agent specs publishes the validator commands to run yourself. An unmet expectation is an error, so unlike agent audit no per-code split is needed; a forwarded parse or render warning blocks only under --strict, and so does AB701, which reports that a bundle carried no test cases at all. An unknown --case name is a usage error rather than a run that selects nothing, so a typo in CI cannot read as a pass. --target and --profile intersect each case's own selection rather than widening it.",
   }),
+  agentCommand("install", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Installed, or checks passed"),
+      USAGE,
+      FINDINGS("Install finding, or --check found drift"),
+    ],
+    notes:
+      "Renders and packages in memory rather than trusting a dist tree, so an install is always derived from the bundle. Destinations come from the target profiles. --register is the only flag that edits host config, and only the marketplace layout needs it. Approximate render diagnostics do not fail install, unlike convert and validate.",
+  }),
+  agentCommand("uninstall", {
+    writes: true,
+    stability: "experimental",
+    exitCodes: [
+      OK("Removed, already absent under --check, or dry run completed"),
+      USAGE,
+      FINDINGS("Manifest missing or malformed, or --check found the install still present"),
+    ],
+    notes:
+      "Removes exactly the inventory recorded in .claude-cli-install.json and nothing else. --scope is optional: both scopes are searched, and two matches is an error rather than a guess.",
+  }),
+  agentCommand("installed", {
+    stability: "experimental",
+    exitCodes: [OK("Listing written to stdout"), USAGE],
+    stream: { success: "stdout" },
+    notes:
+      "Scans the install roots declared on the target profiles. All output goes to stdout. Prints observed state, so it never reports findings.",
+  }),
   agentCommand("specs", {
     exitCodes: [OK("Profiles written to stdout"), USAGE],
     stream: { success: "stdout" },

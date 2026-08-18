@@ -185,4 +185,18 @@ export const cursorProfile: TargetProfile = {
       diagnostics: ["AB181", "AB182", "AB187"],
     },
   },
+  install: {
+    user: {
+      root: "~/.cursor/plugins/local",
+      layout: "plugin-dir",
+      profile: "plugin",
+      activation: null,
+    },
+    project: {
+      root: ".",
+      layout: "merge",
+      profile: "project",
+      activation: null,
+    },
+  },
 };

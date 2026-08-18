@@ -4,6 +4,7 @@ import type { ImportReport } from "./import/normalize.js";
 import type { PackageReport } from "./package/index.js";
 import type { AuditReport } from "./audit/index.js";
 import type { TestReport } from "./test/index.js";
+import type { InstallReport } from "./install/index.js";
 
 export const TARGETS = ["claude-code", "codex", "cursor"] as const;
 export type AgentTarget = (typeof TARGETS)[number];
@@ -169,7 +170,10 @@ export interface AgentResult {
     | "import"
     | "package"
     | "audit"
-    | "test";
+    | "test"
+    | "install"
+    | "uninstall"
+    | "installed";
   ok: boolean;
   source?: string;
   targets: AgentTarget[];
@@ -194,6 +198,8 @@ export interface AgentResult {
   audit?: AuditReport;
   /** Contract test results, emitted by `agent test`. */
   test?: TestReport;
+  /** Install, uninstall, or listing result, emitted by the install commands. */
+  install?: InstallReport;
   dryRun?: boolean;
   check?: boolean;
   stale?: boolean;

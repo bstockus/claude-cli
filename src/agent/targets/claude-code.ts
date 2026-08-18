@@ -184,4 +184,18 @@ export const claudeCodeProfile: TargetProfile = {
       diagnostics: ["AB181", "AB182", "AB187"],
     },
   },
+  install: {
+    user: {
+      root: "~/.claude/plugins/marketplaces",
+      layout: "marketplace",
+      profile: "plugin",
+      activation: { file: "~/.claude/settings.json", form: "claude-enabled-plugins" },
+    },
+    project: {
+      root: ".",
+      layout: "merge",
+      profile: "project",
+      activation: null,
+    },
+  },
 };

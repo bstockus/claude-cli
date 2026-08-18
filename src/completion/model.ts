@@ -61,6 +61,9 @@ const CHOICES: Record<string, string[]> = {
   "md links|--type": ["all", "link", "image"],
   "agent import|--from": ["auto", "claude-code-plugin", "claude-code-project", "codex", "cursor"],
   "agent package|--marketplace": ["none", "local", "repo"],
+  "agent install|--scope": ["user", "project"],
+  "agent uninstall|--scope": ["user", "project"],
+  "agent installed|--scope": ["user", "project"],
 };
 
 /** Positional arguments whose values are a fixed vocabulary. */
@@ -85,7 +88,7 @@ const ARGUMENT_CHOICES: Record<string, string[]> = {
 
 /** Value names that mean "a path", so the shell's own file completion is right. */
 const FILE_NAMES = new Set(["file", "files", "path", "paths", "schema", "baseline", "config"]);
-const DIRECTORY_NAMES = new Set(["dir", "directory", "output", "source", "root"]);
+const DIRECTORY_NAMES = new Set(["dir", "directory", "output", "source", "root", "into"]);
 
 function valueKind(commandId: string, long: string, valueName: string | null): ValueKind {
   if (!valueName) return "none";

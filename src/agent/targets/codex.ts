@@ -190,4 +190,15 @@ export const codexProfile: TargetProfile = {
       diagnostics: ["AB181", "AB182", "AB187"],
     },
   },
+  install: {
+    // Codex's project rules root is AGENTS.md. A user-scope merge would
+    // clobber ~/AGENTS.md, so there is no recorded user location.
+    user: null,
+    project: {
+      root: ".",
+      layout: "merge",
+      profile: "project",
+      activation: null,
+    },
+  },
 };

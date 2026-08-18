@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { writeArtifactsAtomically } from "../../src/agent/writer.js";
+import { writeArtifactsAtomically, placeSymlink } from "../../src/agent/writer.js";
 import type { Artifact } from "../../src/agent/types.js";
 
 const temporary: string[] = [];
@@ -94,5 +94,24 @@ describe("writeArtifactsAtomically", () => {
       ),
     ).toThrow();
     expect(fs.readdirSync(root).filter((name) => name.includes("staging"))).toEqual([]);
+  });
+});
+
+describe("placeSymlink", () => {
+  it("creates a symlink and replaces an existing path", () => {
+    const root = workspace();
+    const target = path.join(root, "tree");
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, "file.md"), "hello");
+    const link = path.join(root, "plugins", "hello");
+    placeSymlink(link, target);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(path.join(link, "file.md"), "utf8")).toBe("hello");
+    fs.rmSync(link, { recursive: true, force: true });
+    fs.mkdirSync(link, { recursive: true });
+    fs.writeFileSync(path.join(link, "old.md"), "stale");
+    placeSymlink(link, target);
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(path.join(link, "file.md"), "utf8")).toBe("hello");
   });
 });

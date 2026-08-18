@@ -219,6 +219,35 @@ export interface TargetProfile {
   features: Record<FeatureKey, FeatureProfile>;
   /** Catalog shape for `agent package`. Optional so adding it stayed additive. */
   marketplace?: MarketplaceProfile;
+  /**
+   * Where `agent install` places a rendered tree. Optional so adding it stays
+   * additive, the same way `marketplace` was: a consumer that has not been
+   * updated sees a new key rather than a changed shape.
+   */
+  install?: InstallProfile;
+}
+
+/** How a host discovers an installed tree. */
+export type InstallLayout = "plugin-dir" | "merge" | "marketplace";
+
+/**
+ * A host file that activates a marketplace install. `null` when the root is
+ * auto-scanned and needs no edit.
+ */
+export type InstallActivation = { file: string; form: "claude-enabled-plugins" } | null;
+
+export interface InstallLocation {
+  /** `~`-prefixed for user scope; relative for project scope. */
+  root: string;
+  layout: InstallLayout;
+  profile: AgentProfile;
+  /** Host file that activates the install, or null when the root is auto-scanned. */
+  activation: InstallActivation;
+}
+
+export interface InstallProfile {
+  user: InstallLocation | null;
+  project: InstallLocation | null;
 }
 
 function segmentToSource(segment: string): string {
@@ -352,5 +381,23 @@ export function validateProfile(profile: TargetProfile): string[] {
     compareSemver(profile.host.minimumVersion, profile.host.verifiedThrough) > 0
   )
     problems.push("host minimumVersion is greater than verifiedThrough");
+  if (profile.install) {
+    for (const scope of ["user", "project"] as const) {
+      const location = profile.install[scope];
+      if (!location) continue;
+      if (!["plugin-dir", "merge", "marketplace"].includes(location.layout))
+        problems.push(`install.${scope}.layout '${location.layout}' is not a known layout`);
+      if (!profile.profiles.includes(location.profile))
+        problems.push(`install.${scope} names unsupported output profile '${location.profile}'`);
+      if (location.root.split(/[/\\]/).includes(".."))
+        problems.push(`install.${scope}.root escapes its scope`);
+      if (location.activation) {
+        if (location.activation.form !== "claude-enabled-plugins")
+          problems.push(`install.${scope}.activation.form is unknown`);
+        if (!location.activation.file.trim())
+          problems.push(`install.${scope}.activation.file is empty`);
+      }
+    }
+  }
   return problems;
 }

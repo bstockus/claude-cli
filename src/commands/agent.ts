@@ -14,6 +14,7 @@ import type {
 } from "../agent/types.js";
 import type { AuditReport } from "../agent/audit/index.js";
 import type { TestReport } from "../agent/test/index.js";
+import type { InstallReport } from "../agent/install/index.js";
 import { formatAgentSarif } from "../agent/sarif.js";
 import { agentFormatsFor } from "../formats.js";
 import type { OutputFormat } from "../types.js";
@@ -204,6 +205,18 @@ function formatTest(report: TestReport): string[] {
   return lines;
 }
 
+function formatInstall(report: InstallReport): string[] {
+  if (!report.installs.length) return ["installs: none"];
+  return [
+    "installs:",
+    ...report.installs.map((entry) => {
+      const flags: string[] = [entry.layout, entry.mode, entry.scope];
+      if (entry.registered) flags.push("registered");
+      return `  ${entry.name}@${entry.version}  ${entry.target}/${entry.profile}  ${flags.join(" ")}  ${entry.destination}  ${entry.files} files`;
+    }),
+  ];
+}
+
 function formatResult(result: AgentResult, opts: AgentOptions): string {
   const format = opts.format;
   // Keyed off the command so the message stays byte-identical for the
@@ -229,6 +242,7 @@ function formatResult(result: AgentResult, opts: AgentOptions): string {
   if (result.doctor) lines.push("", ...formatDoctor(result.doctor));
   if (result.audit) lines.push("", ...formatAudit(result.audit));
   if (result.test) lines.push("", ...formatTest(result.test));
+  if (result.install) lines.push("", ...formatInstall(result.install));
   if (result.diagnostics.length) {
     lines.push("", "diagnostics:");
     for (const item of result.diagnostics) {

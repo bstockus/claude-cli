@@ -75,6 +75,34 @@ describe("target profiles", () => {
     expect(payload.schemaVersion).toBe(PROFILE_SCHEMA_VERSION);
     expect(JSON.parse(JSON.stringify(payload))).toEqual(payload);
   });
+
+  it("records install locations from the paths the hosts actually scan", () => {
+    expect(profileFor("cursor").install).toEqual({
+      user: {
+        root: "~/.cursor/plugins/local",
+        layout: "plugin-dir",
+        profile: "plugin",
+        activation: null,
+      },
+      project: { root: ".", layout: "merge", profile: "project", activation: null },
+    });
+    expect(profileFor("claude-code").install).toEqual({
+      user: {
+        root: "~/.claude/plugins/marketplaces",
+        layout: "marketplace",
+        profile: "plugin",
+        activation: { file: "~/.claude/settings.json", form: "claude-enabled-plugins" },
+      },
+      project: { root: ".", layout: "merge", profile: "project", activation: null },
+    });
+    expect(profileFor("codex").install?.user).toBeNull();
+    expect(profileFor("codex").install?.project).toEqual({
+      root: ".",
+      layout: "merge",
+      profile: "project",
+      activation: null,
+    });
+  });
 });
 
 describe("output patterns", () => {

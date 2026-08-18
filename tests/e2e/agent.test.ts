@@ -58,6 +58,9 @@ describe("agent CLI", () => {
       "package",
       "audit",
       "test",
+      "install",
+      "uninstall",
+      "installed",
     ])
       expect(result.stdout).toContain(command);
   });
@@ -1290,5 +1293,157 @@ describe("agent test", () => {
     const before = fs.readdirSync(bundle, { recursive: true }).map(String).sort();
     await run("agent", "test", bundle, "--target", "all");
     expect(fs.readdirSync(bundle, { recursive: true }).map(String).sort()).toEqual(before);
+  });
+});
+
+describe("agent install", () => {
+  function installBundle(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-install-e2e-"));
+    temporary.push(root);
+    const source = path.join(root, "hello");
+    fs.mkdirSync(path.join(source, "skills", "greet"), { recursive: true });
+    fs.writeFileSync(
+      path.join(source, "agent-bundle.yaml"),
+      "schemaVersion: '1'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n",
+    );
+    fs.writeFileSync(
+      path.join(source, "skills", "greet", "SKILL.md"),
+      "---\nname: greet\ndescription: Say hello\n---\n\nSay hello.\n",
+    );
+    return source;
+  }
+
+  async function runHome(
+    home: string,
+    ...args: string[]
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    try {
+      const result = await exec("node", [cli, ...args], {
+        env: { ...process.env, HOME: home, CI: "1" },
+      });
+      return { ...result, exitCode: 0 };
+    } catch (error) {
+      const result = error as { stdout?: string; stderr?: string; code?: number };
+      return {
+        stdout: result.stdout ?? "",
+        stderr: result.stderr ?? "",
+        exitCode: result.code ?? 1,
+      };
+    }
+  }
+
+  it("installs, lists, checks, and uninstalls a cursor user plugin", async () => {
+    const source = installBundle();
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-install-home-"));
+    temporary.push(home);
+    const installed = await runHome(
+      home,
+      "agent",
+      "install",
+      source,
+      "--target",
+      "cursor",
+      "--scope",
+      "user",
+      "-fj",
+    );
+    expect(installed.exitCode, installed.stdout).toBe(0);
+    const payload = JSON.parse(installed.stdout);
+    expect(payload.command).toBe("install");
+    expect(payload.install.installs[0].layout).toBe("plugin-dir");
+    const dest = payload.install.installs[0].destination as string;
+    expect(dest.startsWith(home)).toBe(true);
+    expect(fs.existsSync(path.join(dest, ".claude-cli-install.json"))).toBe(true);
+
+    const listed = await runHome(home, "agent", "installed", "--target", "cursor", "-fj");
+    expect(listed.exitCode).toBe(0);
+    expect(
+      JSON.parse(listed.stdout).install.installs.map((row: { name: string }) => row.name),
+    ).toEqual(["hello"]);
+
+    const current = await runHome(
+      home,
+      "agent",
+      "install",
+      source,
+      "--target",
+      "cursor",
+      "--scope",
+      "user",
+      "--check",
+      "-fj",
+    );
+    expect(current.exitCode).toBe(0);
+    expect(JSON.parse(current.stdout).stale).toBe(false);
+
+    const removed = await runHome(
+      home,
+      "agent",
+      "uninstall",
+      "hello",
+      "--target",
+      "cursor",
+      "--scope",
+      "user",
+      "-fj",
+    );
+    expect(removed.exitCode, removed.stdout).toBe(0);
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+
+  it("writes nothing under --dry-run and reports AB800 for codex user scope", async () => {
+    const source = installBundle();
+    const into = path.join(path.dirname(source), "plugins");
+    const dry = await run(
+      "agent",
+      "install",
+      source,
+      "--target",
+      "cursor",
+      "--into",
+      into,
+      "--dry-run",
+      "-fj",
+    );
+    expect(dry.exitCode).toBe(0);
+    expect(JSON.parse(dry.stdout).dryRun).toBe(true);
+    expect(fs.existsSync(into)).toBe(false);
+
+    const refused = await run(
+      "agent",
+      "install",
+      source,
+      "--target",
+      "codex",
+      "--scope",
+      "user",
+      "-fj",
+    );
+    expect(refused.exitCode).toBe(2);
+    expect(
+      JSON.parse(refused.stdout).diagnostics.map((item: { code: string }) => item.code),
+    ).toContain("AB800");
+  });
+
+  it("registers a claude-code marketplace against an injected HOME", async () => {
+    const source = installBundle();
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-install-claude-"));
+    temporary.push(home);
+    const result = await runHome(
+      home,
+      "agent",
+      "install",
+      source,
+      "--target",
+      "claude-code",
+      "--scope",
+      "user",
+      "--register",
+      "-fj",
+    );
+    expect(result.exitCode, result.stdout).toBe(0);
+    const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude/settings.json"), "utf8"));
+    expect(settings.enabledPlugins["hello@hello"]).toBe(true);
+    expect(settings.extraKnownMarketplaces.hello.source.source).toBe("directory");
   });
 });

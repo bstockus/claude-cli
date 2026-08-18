@@ -69,3 +69,18 @@ export function writeArtifactsAtomically(
     fs.rmSync(staging, { recursive: true, force: true });
   }
 }
+
+/**
+ * Places `linkPath` as a symlink to `target`.
+ *
+ * Replaces whatever is already at `linkPath`. Occupancy checks belong to the
+ * caller; this is the write. The target is stored as an absolute path so the
+ * link keeps working after the process changes directory.
+ */
+export function placeSymlink(linkPath: string, target: string): void {
+  const resolved = path.resolve(target);
+  fs.mkdirSync(path.dirname(linkPath), { recursive: true });
+  if (fs.lstatSync(linkPath, { throwIfNoEntry: false }))
+    fs.rmSync(linkPath, { recursive: true, force: true });
+  fs.symlinkSync(resolved, linkPath);
+}

@@ -55,6 +55,9 @@ import { agentPackageAction } from "./commands/agent-package.js";
 import { agentAuditAction } from "./commands/agent-audit.js";
 import { agentTestAction } from "./commands/agent-test.js";
 import { agentDoctorAction } from "./commands/agent-doctor.js";
+import { agentInstallAction } from "./commands/agent-install.js";
+import { agentUninstallAction } from "./commands/agent-uninstall.js";
+import { agentInstalledAction } from "./commands/agent-installed.js";
 import { describeAction } from "./commands/describe.js";
 import { schemaAction } from "./commands/schema.js";
 import { completionAction } from "./commands/completion.js";
@@ -388,6 +391,65 @@ agent
   )
   .action((source: string, opts: Parameters<typeof agentTestAction>[1]) =>
     agentActionBoundary("test", opts, () => agentTestAction(source, opts)),
+  );
+
+agent
+  .command("install")
+  .description("Install a bundle into a host plugin or project directory")
+  .argument("<source>", "Bundle root")
+  .requiredOption("--target <target>", "Target: claude-code, codex, or cursor", collect)
+  .option("--scope <scope>", "Install scope: user or project", "user")
+  .option("--into <dir>", "Override the install root declared by the target profile")
+  .option("--profile <profile>", "Must match the location's profile when given")
+  .option("--link", "Symlink the rendered tree instead of copying")
+  .option("--register", "Edit host config to activate a marketplace install")
+  .option("--strict", "Treat warnings as blocking findings")
+  .option("--force", "Replace a destination that is not a prior install of this bundle")
+  .option("--dry-run", "Plan the install without writing")
+  .option("--check", "Compare against an existing install without writing")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nRenders and packages in memory, so an install is always derived from the\nbundle rather than from a possibly-drifted dist tree. Destinations come from\nthe target profiles. --register is the only flag that edits host config.\n\nExit codes:\n  0  Installed, or checks passed\n  1  Invocation or I/O error\n  2  Install finding, or --check found drift",
+  )
+  .action((source: string, opts: Parameters<typeof agentInstallAction>[1]) =>
+    agentActionBoundary("install", opts, () => agentInstallAction(source, opts)),
+  );
+
+agent
+  .command("uninstall")
+  .description("Remove a previously installed bundle")
+  .argument("<name>", "Installed bundle name")
+  .requiredOption("--target <target>", "Target: claude-code, codex, or cursor", collect)
+  .option("--scope <scope>", "Install scope: user or project")
+  .option("--into <dir>", "Override the install root declared by the target profile")
+  .option("--dry-run", "Report the removal without writing")
+  .option("--check", "Exit 2 when the named install is still present")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nRemoves exactly the inventory recorded in .claude-cli-install.json and\nnothing else. --scope is optional: both scopes are searched, and two matches\nis an error rather than a guess.\n\nExit codes:\n  0  Removed, already absent under --check, or dry run completed\n  1  Invocation or I/O error\n  2  Manifest missing or malformed, or --check found the install still present",
+  )
+  .action((name: string, opts: Parameters<typeof agentUninstallAction>[1]) =>
+    agentActionBoundary("uninstall", opts, () => agentUninstallAction(name, opts)),
+  );
+
+agent
+  .command("installed")
+  .description("List bundles installed by this CLI")
+  .option("--target <target>", "Target (repeatable, or all)", collect)
+  .option("--scope <scope>", "Install scope: user or project")
+  .option("--into <dir>", "Override the install root declared by the target profile")
+  .option("--format <fmt>", "Output format: llm, human, json", "llm")
+  .option("--envelope", "Wrap --format json output in the versioned result envelope")
+  .addHelpText(
+    "after",
+    "\nScans the install roots declared on the target profiles and lists every\n.claude-cli-install.json it finds.\n\nExit codes:\n  0  Listing written to stdout\n  1  Invocation error",
+  )
+  .action((opts: Parameters<typeof agentInstalledAction>[0]) =>
+    agentActionBoundary("installed", opts, () => agentInstalledAction(opts)),
   );
 
 agent

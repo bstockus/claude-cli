@@ -292,6 +292,10 @@ claude-cli agent specs --format json
 claude-cli agent doctor ./my-bundle --target all --output ./dist
 claude-cli agent convert ./my-bundle --target all --output ./dist --profile both
 claude-cli agent package ./my-bundle --target all --output ./release --archive
+claude-cli agent install ./my-bundle --target cursor --scope user
+claude-cli agent install ./my-bundle --target claude-code --scope user --register
+claude-cli agent installed
+claude-cli agent uninstall markdown --target cursor --scope user
 claude-cli agent audit ./my-bundle --target all --format sarif
 claude-cli agent test ./my-bundle --target all --strict
 claude-cli agent convert ./my-bundle --target cursor --output ./dist --dry-run
@@ -326,6 +330,14 @@ It renders the bundle itself — so a package can never certify a stale tree —
 marketplace catalogs, `sha256sum`-compatible checksums, a file inventory, and optional
 byte-reproducible `.tar.gz` archives, with publish-readiness checks over all of it. It never
 contacts the network and never publishes.
+
+`agent install` takes that same in-memory render and places it where the host actually
+scans: Cursor's user plugin directory, a Claude Code local marketplace, or a project-scope
+merge. Copy is the default; `--link` materializes once under the bundle's `.install/` tree
+and symlinks the host path at it. `--register` is the only flag that edits host config, and
+only Claude Code's marketplace layout needs it. `agent uninstall` removes exactly the
+inventory recorded in `.claude-cli-install.json`, and `agent installed` lists what those
+manifests describe.
 
 `agent audit` answers the question validation does not: what should a reviewer inspect before
 trusting or distributing this bundle? It reports the commands its hooks and MCP servers would
