@@ -69,6 +69,13 @@ materialized files are live (`AB807`); the host may not follow the symlink.
 it. It adds `extraKnownMarketplaces` and `enabledPlugins` to `~/.claude/settings.json`. Without
 it, the marketplace is still written and the exact edit is reported as `AB805`.
 
+Registering is necessary but not sufficient: Claude Code validates the catalog those keys point
+at and, if it fails, drops the marketplace **and** prunes the settings entries — so a bad catalog
+looks like a `--register` that never ran. `marketplace.publisher` is therefore required in the
+bundle, since the catalog's `owner` comes from it; see
+[`agent package`](agent-package.md#claude-code-requires-a-marketplace-owner). Verify an install
+with `claude plugin validate ~/.claude/plugins/marketplaces/<name>`.
+
 ## Installed-state manifest
 
 Each destination gets `.claude-cli-install.json`: generator name and version, bundle name and

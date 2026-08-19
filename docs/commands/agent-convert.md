@@ -36,6 +36,23 @@ are reported. Hard validation errors and strict-mode findings do not write.
 `--dry-run` and `--check` are read-only modes. Existing nonempty destinations require
 `--force` during a writing conversion.
 
+## The plugin manifest omits what the host discovers
+
+A rendered `plugin.json` names only the component roots the host will not find by itself. Each
+target profile lists the rest as `manifest.impliedFields`, and the renderer leaves those keys out.
+
+For `claude-code` that is `agents` and `hooks`, and in both cases naming the key is worse than
+redundant — it breaks the plugin:
+
+| Key      | Naming the standard path does this                                                                                                             |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents` | The key takes a list of `.md` files and rejects a directory, so the whole manifest fails                                                       |
+| `hooks`  | The key is for _additional_ files; the standard `hooks/hooks.json` is already loaded, so this duplicates it and the plugin's hooks are dropped |
+
+`claude plugin validate` reports neither, so the failure surfaces at session start instead — as a
+manifest error for `agents`, and in `/plugin` as "Duplicate hooks file detected" for `hooks`.
+`skills` and `mcpServers` are still declared, which Claude Code accepts.
+
 ## Native overlays
 
 A portable bundle can only express concepts with defensible cross-target semantics. Anything

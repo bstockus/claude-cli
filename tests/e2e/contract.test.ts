@@ -75,19 +75,31 @@ function auditBaseline(): string {
   return file;
 }
 
-function bundle(): string {
+function bundle(manifest?: string): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "contract-bundle-"));
   temporary.push(root);
   fs.mkdirSync(path.join(root, "skills", "hello"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "agent-bundle.yaml"),
-    "schemaVersion: '1'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n",
+    manifest ?? "schemaVersion: '1'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n",
   );
   fs.writeFileSync(
     path.join(root, "skills", "hello", "SKILL.md"),
     "---\nname: hello\ndescription: Say hello\n---\nSay hello.\n",
   );
   return root;
+}
+
+/**
+ * The v1 bundle above cannot carry a `marketplace` block (AB127), and
+ * claude-code's catalog requires an owner, so the packaging cases get a v2
+ * sibling. `agent upgrade --to-schema 2` still needs the v1 one.
+ */
+function publishedBundle(): string {
+  return bundle(
+    "schemaVersion: '2'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n" +
+      "marketplace:\n  publisher:\n    name: Example\n",
+  );
 }
 
 function validate(schemaId: string, payload: unknown, label: string): void {
@@ -202,6 +214,7 @@ describe("declared output schemas match real output", () => {
     args: (context: {
       workspace: string;
       bundle: string;
+      publishedBundle: string;
       staleToc: string;
       auditBaseline: string;
     }) => string[];
@@ -520,7 +533,7 @@ describe("declared output schemas match real output", () => {
       args: (c) => [
         "agent",
         "package",
-        c.bundle,
+        c.publishedBundle,
         "--target",
         "claude-code",
         "--output",
@@ -588,6 +601,7 @@ describe("declared output schemas match real output", () => {
     const context = {
       workspace: workspace(),
       bundle: bundle(),
+      publishedBundle: publishedBundle(),
       staleToc: staleToc(),
       auditBaseline: auditBaseline(),
     };

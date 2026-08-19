@@ -134,9 +134,44 @@ describe("catalogs", () => {
       name: "demo",
       version: "1.2.3",
       description: "A demo",
-      author: "Example",
+      // An object, and one category rather than the bundle's list: Claude Code
+      // rejects the bare-string author and the array that shipped in 1.10.0.
+      author: { name: "Example" },
+      category: "example",
       license: "MIT",
     });
+  });
+
+  it("names the marketplace itself at the document's top level", () => {
+    const result = buildCatalogs(loadBundle(bundle(FULL)), ["claude-code"], PROFILES, "repo");
+    expect(result.diagnostics).toEqual([]);
+    const document = JSON.parse(result.artifacts[0].content.toString());
+    // `name` has to match the settings key `agent install --register` writes,
+    // which is the bundle name; Claude Code enforces the two agreeing.
+    expect(document.name).toBe("demo");
+    expect(document.description).toBe("A demo");
+    expect(document.owner).toEqual({ name: "Example" });
+  });
+
+  it("requires a publisher for the claude-code catalog owner", () => {
+    const result = buildCatalogs(loadBundle(bundle()), ["claude-code"], PROFILES, "repo");
+    const owner = result.diagnostics.find((item) => item.message.includes("'owner'"));
+    expect(owner?.code).toBe("AB500");
+    expect(owner?.severity).toBe("error");
+    // The remediation names the bundle key, not the catalog key.
+    expect(owner?.remediation).toBe("Set marketplace.publisher in agent-bundle.yaml.");
+  });
+
+  it("keeps the cursor and codex publisher a bare name", () => {
+    const result = buildCatalogs(loadBundle(bundle(FULL)), ["cursor", "codex"], PROFILES, "repo");
+    for (const target of ["cursor", "codex"] as const) {
+      const spec = profileFor(target).marketplace!;
+      const artifact = result.artifacts.find((item) => item.path.startsWith(`${target}/`))!;
+      const entry = JSON.parse(artifact.content.toString())[spec.entriesKey][0];
+      expect(entry[target === "cursor" ? "author" : "publisher"]).toBe("Example");
+      // Plural, so the whole list survives — unlike claude-code's `category`.
+      expect(entry.categories).toEqual(["example"]);
+    }
   });
 
   it("reports a missing required field with AB500", () => {

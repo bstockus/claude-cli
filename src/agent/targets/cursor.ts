@@ -91,7 +91,12 @@ export const cursorProfile: TargetProfile = {
         required: true,
         source: { from: "marketplace", field: "displayName" },
       },
-      { name: "author", required: false, source: { from: "marketplace", field: "publisher" } },
+      {
+        name: "author",
+        required: false,
+        source: { from: "marketplace", field: "publisher" },
+        transform: "name",
+      },
       { name: "categories", required: false, source: { from: "marketplace", field: "categories" } },
       { name: "icon", required: false, source: { from: "marketplace", field: "icon" } },
     ],

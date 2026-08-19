@@ -7,7 +7,7 @@ import type {
   Artifact,
 } from "../types.js";
 import { diagnostic } from "../types.js";
-import type { MarketplaceEntryField } from "../targets/index.js";
+import type { MarketplaceEntryField, MarketplaceFieldTransform } from "../targets/index.js";
 import { profileFor } from "../targets/index.js";
 import { packageName, packageVersion } from "../../version.js";
 import { archive } from "./tar.js";
@@ -46,23 +46,74 @@ function error(
   return { ...diagnostic(code, message, "unsupported", extra), severity: "error" };
 }
 
+/**
+ * Names the bundle key behind a catalog field, which is not always the catalog
+ * key: Claude Code's `owner` and Cursor's `author` both come from
+ * `marketplace.publisher`, so pointing at the catalog name would send an author
+ * to a key that does not exist.
+ */
+function sourceField(field: MarketplaceEntryField): string {
+  switch (field.source.from) {
+    case "marketplace":
+      return `marketplace.${field.source.field}`;
+    case "manifest":
+      return field.source.field;
+    case "computed":
+      return field.name;
+  }
+}
+
+/** Reshapes a resolved value into the form the target's catalog declares. */
+function reshape(value: unknown, transform: MarketplaceFieldTransform | undefined): unknown {
+  switch (transform ?? "identity") {
+    case "name":
+      return value && typeof value === "object" ? (value as { name?: string }).name : value;
+    case "first":
+      return Array.isArray(value) ? value[0] : value;
+    case "identity":
+      return value;
+  }
+}
+
 /** Resolves one catalog field from the manifest, the marketplace block, or the layout. */
 function resolveField(field: MarketplaceEntryField, bundle: AgentBundle, source: string): unknown {
   switch (field.source.from) {
     case "computed":
-      return source;
+      return reshape(source, field.transform);
     case "manifest":
-      return (bundle.manifest as Record<string, unknown>)[field.source.field];
-    case "marketplace": {
-      const value = (bundle.marketplace as Record<string, unknown> | undefined)?.[
-        field.source.field
-      ];
-      // The catalog wants a name, not the publisher object.
-      if (field.source.field === "publisher" && value && typeof value === "object")
-        return (value as { name?: string }).name;
-      return value;
-    }
+      return reshape(
+        (bundle.manifest as Record<string, unknown>)[field.source.field],
+        field.transform,
+      );
+    case "marketplace":
+      return reshape(
+        (bundle.marketplace as Record<string, unknown> | undefined)?.[field.source.field],
+        field.transform,
+      );
   }
+}
+
+/**
+ * Fills one catalog object from a field list, reporting AB500 per missing
+ * requirement. Shared by the document and its entries so a target's identity
+ * fields resolve by exactly the rules its plugin fields do.
+ */
+function collectFields(
+  fields: MarketplaceEntryField[],
+  bundle: AgentBundle,
+  source: string,
+  onMissing: (field: MarketplaceEntryField) => void,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const field of fields) {
+    const value = resolveField(field, bundle, source);
+    if (empty(value)) {
+      if (field.required) onMissing(field);
+      continue;
+    }
+    result[field.name] = value;
+  }
+  return result;
 }
 
 function empty(value: unknown): boolean {
@@ -123,22 +174,18 @@ export function buildCatalogs(
     }
     for (const profile of profiles) {
       if (profile !== "plugin") continue;
-      const entry: Record<string, unknown> = {};
-      for (const field of spec.entryFields) {
-        const value = resolveField(field, bundle, `./${target}/${profile}`);
-        if (empty(value)) {
-          if (field.required)
-            diagnostics.push(
-              error("AB500", `Catalog field '${field.name}' is required by ${target}`, {
-                target,
-                profile,
-                remediation: `Set marketplace.${field.name} in agent-bundle.yaml.`,
-              }),
-            );
-          continue;
-        }
-        entry[field.name] = value;
-      }
+      const source = `./${target}/${profile}`;
+      const missing = (field: MarketplaceEntryField): void => {
+        diagnostics.push(
+          error("AB500", `Catalog field '${field.name}' is required by ${target}`, {
+            target,
+            profile,
+            remediation: `Set ${sourceField(field)} in agent-bundle.yaml.`,
+          }),
+        );
+      };
+      const document = collectFields(spec.documentFields ?? [], bundle, source, missing);
+      const entry = collectFields(spec.entryFields, bundle, source, missing);
       // A catalog naming a version the manifest disagrees with would install
       // one thing and advertise another.
       if (entry.version !== undefined && entry.version !== bundle.version)
@@ -152,7 +199,9 @@ export function buildCatalogs(
       const catalogPath = `${target}/${profile}/${location.directory}/${location.file}`;
       artifacts.push({
         path: catalogPath,
-        content: Buffer.from(JSON.stringify({ [spec.entriesKey]: [entry] }, null, 2) + "\n"),
+        content: Buffer.from(
+          JSON.stringify({ ...document, [spec.entriesKey]: [entry] }, null, 2) + "\n",
+        ),
         mode: 0o644,
       });
       entries.push({ target, profile, path: catalogPath });

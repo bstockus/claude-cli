@@ -140,4 +140,51 @@ describe("agent bundles", () => {
     expect(codex).toContain("not_match");
     expect(rendered.diagnostics.map((item) => item.code)).toContain("AB361");
   });
+
+  it("omits manifest keys the host derives from the layout", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-bundle-implied-"));
+    temporary.push(root);
+    fs.mkdirSync(path.join(root, "skills", "release"), { recursive: true });
+    fs.mkdirSync(path.join(root, "agents"), { recursive: true });
+    fs.mkdirSync(path.join(root, "hooks"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "agent-bundle.yaml"),
+      "schemaVersion: '2'\nname: sample\nversion: 1.0.0\ndescription: Sample bundle\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "hooks", "hooks.yaml"),
+      "hooks:\n  session-start:\n    - command: echo\n      args: [hi]\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "skills", "release", "SKILL.md"),
+      "---\nname: release\ndescription: Prepare a release\n---\nShip it.\n",
+    );
+    fs.writeFileSync(
+      path.join(root, "agents", "auditor.agent.md"),
+      "---\nname: auditor\ndescription: Audit things\n---\nAudit.\n",
+    );
+    const rendered = renderBundle(loadBundle(root), ["claude-code", "cursor"], ["plugin"]);
+    const read = (target: string, file: string): Record<string, unknown> =>
+      JSON.parse(
+        rendered.artifacts
+          .find((artifact) => artifact.path === `${target}/plugin/${file}`)!
+          .content.toString(),
+      );
+    // `agents` takes a list of files and rejects a directory, failing the whole
+    // manifest; naming the standard `hooks/hooks.json` the host already loaded
+    // is a duplicate that drops the plugin's hooks. Omitting both is what loads
+    // them. `claude plugin validate` catches neither.
+    const claude = read("claude-code", ".claude-plugin/plugin.json");
+    expect(claude.agents).toBeUndefined();
+    expect(claude.hooks).toBeUndefined();
+    expect(claude.skills).toBe("./skills/");
+    for (const emitted of ["agents/auditor.md", "hooks/hooks.json"])
+      expect(
+        rendered.artifacts.some((artifact) => artifact.path === `claude-code/plugin/${emitted}`),
+      ).toBe(true);
+    // Cursor declares no implied keys, so its manifest is unchanged.
+    const cursor = read("cursor", ".cursor-plugin/plugin.json");
+    expect(cursor.agents).toBe("./agents/");
+    expect(cursor.hooks).toBe("./hooks/hooks.json");
+  });
 });

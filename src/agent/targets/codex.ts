@@ -91,7 +91,12 @@ export const codexProfile: TargetProfile = {
         required: true,
         source: { from: "marketplace", field: "displayName" },
       },
-      { name: "publisher", required: true, source: { from: "marketplace", field: "publisher" } },
+      {
+        name: "publisher",
+        required: true,
+        source: { from: "marketplace", field: "publisher" },
+        transform: "name",
+      },
       { name: "categories", required: true, source: { from: "marketplace", field: "categories" } },
       { name: "icon", required: true, source: { from: "marketplace", field: "icon" } },
       {

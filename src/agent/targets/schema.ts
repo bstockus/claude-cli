@@ -96,6 +96,20 @@ export interface ManifestProfile {
   directory: string | null;
   file: string;
   fields: ManifestFieldProfile[];
+  /**
+   * Manifest keys the host derives from the plugin layout on its own, so the
+   * renderer must leave them out. Declaring one is not merely redundant, it is
+   * an error, and neither kind is caught by `claude plugin validate`:
+   *
+   * - `agents` accepts a list of files and rejects the component directory the
+   *   renderer would name, which fails the whole manifest.
+   * - `hooks` is for *additional* hook files; naming the standard
+   *   `hooks/hooks.json` that the host already loaded is a duplicate, and the
+   *   plugin's hooks are dropped.
+   *
+   * Omitting them is what makes `agents/` and `hooks/hooks.json` load.
+   */
+  impliedFields?: string[];
 }
 
 export interface PluginRoots {
@@ -169,10 +183,23 @@ export type MarketplaceFieldSource =
   | { from: "marketplace"; field: string }
   | { from: "computed"; value: "source" };
 
+/**
+ * How a resolved value is reshaped before it lands in the catalog.
+ *
+ * Targets disagree on the shape of the same underlying datum — Claude Code
+ * wants `author` as an object and `category` as one string, Cursor wants
+ * `author` as a bare name and `categories` as the whole list. Naming the
+ * reshape here keeps that disagreement in the profile instead of as a
+ * field-name check inside the packager.
+ */
+export type MarketplaceFieldTransform = "identity" | "name" | "first";
+
 export interface MarketplaceEntryField {
   name: string;
   required: boolean;
   source: MarketplaceFieldSource;
+  /** Defaults to `identity`. */
+  transform?: MarketplaceFieldTransform;
 }
 
 export interface MarketplaceAssetRule {
@@ -196,6 +223,12 @@ export interface MarketplaceProfile {
   catalog: Record<"repo" | "local", { directory: string; file: string } | null>;
   /** Top-level array key inside the catalog document. */
   entriesKey: string;
+  /**
+   * Fields written at the catalog document's top level, beside `entriesKey` —
+   * the marketplace's own identity as opposed to a plugin entry's. Optional so
+   * the addition stays additive for a target that names none.
+   */
+  documentFields?: MarketplaceEntryField[];
   entryFields: MarketplaceEntryField[];
   assets: MarketplaceAssetRule[];
   /** `{name}`, `{version}`, `{target}`, and `{profile}` are substituted. */

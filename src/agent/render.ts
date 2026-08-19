@@ -341,17 +341,20 @@ function transformedHooks(
 }
 
 function manifest(bundle: AgentBundle, target: AgentTarget): Record<string, unknown> {
-  const pluginAgentRoot = profileFor(target).paths.plugin.agents;
+  const profile = profileFor(target);
+  const pluginAgentRoot = profile.paths.plugin.agents;
   if (bundle.legacy && pluginAgentRoot !== null) return { ...bundle.manifest };
+  const implied = new Set(profile.manifest.impliedFields ?? []);
   const result: Record<string, unknown> = {
     name: bundle.name,
     version: bundle.version,
     description: bundle.description,
-    skills: "./skills/",
   };
-  if (bundle.hooks) result.hooks = "./hooks/hooks.json";
-  if (bundle.mcp) result.mcpServers = "./.mcp.json";
-  if (pluginAgentRoot !== null && bundle.agents.length) result.agents = `./${pluginAgentRoot}/`;
+  if (!implied.has("skills")) result.skills = "./skills/";
+  if (bundle.hooks && !implied.has("hooks")) result.hooks = "./hooks/hooks.json";
+  if (bundle.mcp && !implied.has("mcpServers")) result.mcpServers = "./.mcp.json";
+  if (pluginAgentRoot !== null && bundle.agents.length && !implied.has("agents"))
+    result.agents = `./${pluginAgentRoot}/`;
   return result;
 }
 

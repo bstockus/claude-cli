@@ -1297,14 +1297,19 @@ describe("agent test", () => {
 });
 
 describe("agent install", () => {
-  function installBundle(): string {
+  /**
+   * A v1 bundle by default. Pass `manifest` for the claude-code cases, whose
+   * catalog needs an `owner` and so a schema-2 `marketplace` block — AB127
+   * rejects that block on v1.
+   */
+  function installBundle(manifest?: string): string {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-install-e2e-"));
     temporary.push(root);
     const source = path.join(root, "hello");
     fs.mkdirSync(path.join(source, "skills", "greet"), { recursive: true });
     fs.writeFileSync(
       path.join(source, "agent-bundle.yaml"),
-      "schemaVersion: '1'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n",
+      manifest ?? "schemaVersion: '1'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n",
     );
     fs.writeFileSync(
       path.join(source, "skills", "greet", "SKILL.md"),
@@ -1426,7 +1431,10 @@ describe("agent install", () => {
   });
 
   it("registers a claude-code marketplace against an injected HOME", async () => {
-    const source = installBundle();
+    const source = installBundle(
+      "schemaVersion: '2'\nname: hello\nversion: 1.0.0\ndescription: Hello bundle\n" +
+        "marketplace:\n  publisher:\n    name: Example\n",
+    );
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "agent-install-claude-"));
     temporary.push(home);
     const result = await runHome(
@@ -1445,5 +1453,23 @@ describe("agent install", () => {
     const settings = JSON.parse(fs.readFileSync(path.join(home, ".claude/settings.json"), "utf8"));
     expect(settings.enabledPlugins["hello@hello"]).toBe(true);
     expect(settings.extraKnownMarketplaces.hello.source.source).toBe("directory");
+    // Claude Code drops a marketplace whose catalog fails validation, taking
+    // the settings entries above with it, so the catalog has to name itself and
+    // its owner — and its name has to match the settings key.
+    const root = settings.extraKnownMarketplaces.hello.source.path;
+    const catalog = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude-plugin/marketplace.json"), "utf8"),
+    );
+    expect(catalog.name).toBe("hello");
+    expect(catalog.owner).toEqual({ name: "Example" });
+    expect(catalog.plugins[0].source).toBe("./");
+    expect(catalog.plugins[0].author).toEqual({ name: "Example" });
+    // Claude Code loads `agents/` and `hooks/hooks.json` itself, and rejects a
+    // manifest that names either, so the keys are left out.
+    const plugin = JSON.parse(
+      fs.readFileSync(path.join(root, ".claude-plugin/plugin.json"), "utf8"),
+    );
+    expect(plugin.agents).toBeUndefined();
+    expect(plugin.hooks).toBeUndefined();
   });
 });

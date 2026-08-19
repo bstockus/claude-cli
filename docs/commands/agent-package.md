@@ -73,6 +73,26 @@ the target's behavior. The packager resolves fields from that table, so it conta
 per-target branching and updating a catalog format is a data edit. `agent specs --format json`
 publishes the table.
 
+A profile names two field lists. `documentFields` are the catalog's own identity, written at the
+document's top level; `entryFields` describe one plugin inside it. Either list may declare a
+`transform`, because targets disagree on the shape of the same bundle datum:
+
+| Transform  | Effect                        | Used by                                          |
+| ---------- | ----------------------------- | ------------------------------------------------ |
+| `identity` | The value as parsed (default) | Claude Code `owner` and `author`, every `source` |
+| `name`     | An object's `name`            | Cursor `author`, Codex `publisher`               |
+| `first`    | A list's first element        | Claude Code `category`, which is singular        |
+
+## Claude Code requires a marketplace owner
+
+Claude Code refuses a catalog with no top-level `name` or `owner`, and enforces that the `name`
+match the `extraKnownMarketplaces` key — which `agent install --register` derives from the bundle
+name, so the two agree by construction. `owner` comes from `marketplace.publisher`, so a bundle
+without one is `AB500` rather than a catalog Claude Code would silently drop on load.
+
+A schema-1 bundle cannot declare a `marketplace` block at all (`AB127`), so packaging one for
+`claude-code` means running `agent upgrade --to-schema 2` first.
+
 ## Deterministic archives
 
 `--archive` writes ustar `.tar.gz` files built to be byte-identical across runs and machines:

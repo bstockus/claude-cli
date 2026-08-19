@@ -27,6 +27,7 @@ export const claudeCodeProfile: TargetProfile = {
       { name: "hooks", required: false, support: "exact" },
       { name: "mcpServers", required: false, support: "exact" },
     ],
+    impliedFields: ["agents", "hooks"],
   },
   paths: {
     plugin: {
@@ -86,13 +87,28 @@ export const claudeCodeProfile: TargetProfile = {
       local: { directory: ".claude-plugin", file: "marketplace.json" },
     },
     entriesKey: "plugins",
+    // Claude Code rejects a catalog with no `name`, and enforces that it match
+    // the `extraKnownMarketplaces` key — which `agent install` derives from the
+    // bundle name, so sourcing it from the manifest keeps the two in step.
+    documentFields: [
+      { name: "name", required: true, source: { from: "manifest", field: "name" } },
+      { name: "description", required: false, source: { from: "manifest", field: "description" } },
+      { name: "owner", required: true, source: { from: "marketplace", field: "publisher" } },
+    ],
     entryFields: [
       { name: "name", required: true, source: { from: "manifest", field: "name" } },
       { name: "version", required: true, source: { from: "manifest", field: "version" } },
       { name: "description", required: true, source: { from: "manifest", field: "description" } },
       { name: "source", required: true, source: { from: "computed", value: "source" } },
+      // An object, unlike Cursor's bare name.
       { name: "author", required: false, source: { from: "marketplace", field: "publisher" } },
-      { name: "category", required: false, source: { from: "marketplace", field: "categories" } },
+      // Singular: one category, not the bundle's whole list.
+      {
+        name: "category",
+        required: false,
+        source: { from: "marketplace", field: "categories" },
+        transform: "first",
+      },
       { name: "license", required: false, source: { from: "marketplace", field: "license" } },
     ],
     assets: [
